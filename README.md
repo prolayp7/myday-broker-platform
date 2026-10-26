@@ -1,6 +1,6 @@
 # MyDay Broker Platform
 
-MyDay CRM is a broker-focused sales and lead-management application for assigning insurance leads, managing broker follow-up, and supporting administrative operations.
+MyDay Broker is a broker-focused sales and lead-management application for assigning insurance leads, managing broker follow-up, and supporting administrative operations.
 
 ## Architecture
 

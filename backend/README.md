@@ -8,7 +8,7 @@ data model diagrams and operational-flow documentation
 ## Supabase project
 
 - Organization: **PolicyScanner** (Free plan)
-- Project: **Myday CRM**
+- Project: **MyDay Broker**
 - Connection: `db.py` reads `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`
   from `.env` (see `.env.example` for the template — never commit `.env`).
 - The backend always connects using the `service_role` key, which bypasses
@@ -106,7 +106,7 @@ until the real auth flow is built.
 ### How to apply a new migration
 
 1. Write the `.sql` file in `migrations/`, numbered after the last one.
-2. Open the Supabase dashboard → **Myday CRM** project → **SQL Editor** →
+2. Open the Supabase dashboard → **MyDay Broker** project → **SQL Editor** →
    **New query**.
 3. Paste the file's contents, review it, click **Run**.
 4. Update the table above.

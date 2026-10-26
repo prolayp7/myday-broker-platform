@@ -1,0 +1,55 @@
+-- Has the customer held a licence for more than five years?
+--
+-- THE FIFTH CREAM CRITERION. A second Meta dataset (meta_signal.dataset_target,
+-- 0112) is trained only on premium customers, and licence age is a quality
+-- signal independent of everything else already collected: someone can have a
+-- spotless insurance history and still be two years into driving.
+--
+-- The full cream test, all five required:
+--
+--   at_fault_claims_6y = 0        from the DASH report (0114)
+--   convictions_3y     = 0        the broker answers  (0114)
+--   licensed_5y_plus   = true     the broker answers  (THIS)
+--   combined_policy_type in ('Auto and Homeowner', 'Auto and Condo')
+--   is_qualified       = true
+--
+-- ASKED, NOT PARSED, and that is a decision rather than a limitation. DASH does
+-- print "Years Licensed" on every report checked (25 of 25 real reports, values
+-- 3 to 25), so this could have been extracted — but the broker is asked
+-- directly, in the same dialog as convictions, because the answer is then
+-- available for every lead rather than only the ones with a report.
+--
+-- NOT THE LICENCE DATE COLUMNS. driver.g1_date/g2_date/g_date already exist and
+-- are effectively empty: 2 of 181 drivers have a G1 date and NONE has a G or G2
+-- date. Deriving licence age from them would be deriving it from nothing.
+--
+-- BOOLEAN, NOT A COUNT. Nothing needs the precision — the cream test is a
+-- threshold, and "more than five years" is one tap where a number is a choice.
+-- If a future rule needs the actual figure, that is a different column with a
+-- different question behind it.
+--
+-- NULLABLE, NO DEFAULT. Null means UNANSWERED, and unanswered is never cream —
+-- the same rule 0114 was built around for at_fault_claims_6y and convictions_3y.
+-- A default of false would say "not licensed long enough" about every driver
+-- nobody has asked, which is a claim rather than an absence; a default of true
+-- would send unvetted leads to the premium dataset. Only an explicit answer
+-- counts.
+--
+-- ONE COLUMN, AND ONLY ONE. lead.vehicle_count_declared (0114) is now unused —
+-- the dialog's vehicles question is removed with this change, and the multi-car
+-- dataset it was collected for was considered and rejected (17 leads have 2+
+-- cars, 9 of them already cream, and they average LOWER premiums than
+-- single-car leads). It is deliberately NOT dropped here: a nullable column
+-- nothing writes costs nothing, while `drop column` is irreversible and would
+-- need its own coordinated deploy exactly as 0115 did. If it is still unused in
+-- a month, drop it in a migration that does only that.
+--
+-- APPLY BY HAND in the Supabase SQL editor, like every migration in this repo.
+
+alter table driver add column licensed_5y_plus boolean;
+
+
+-- No index. The cream classifier reads this one lead at a time, by primary key,
+-- through a driver row it has already fetched — the same reasoning 0114 gives
+-- for its two columns. An index on a column nothing filters by costs write time
+-- on every insert and buys nothing.

@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!-- viewport-fit=cover lets the page reach under the notch and home
+         indicator, which is what makes env(safe-area-inset-*) return a real
+         value. Without it the bottom bar floats above a white strip on every
+         iPhone since the X. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
+    <title>MyDay CRM — Sales Management</title>
+
+    <!-- Home-screen install. The manifest is what makes this installable at
+         all; the apple-* tags below are Safari's older equivalent, which it
+         still requires — iOS reads almost nothing from the manifest. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+
+    <!-- iOS ignores the manifest's icons and uses only this. Without it the
+         home screen shows a screenshot of the page instead of the mark. -->
+    <link rel="apple-touch-icon" href="/icon-180.png" />
+
+    <!-- Opens without Safari's address and tab bars once installed. This tag,
+         not the manifest's "display": "standalone", is what iOS obeys. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="MyDay" />
+
+    <!-- black-translucent puts the page under the status bar, which is what
+         viewport-fit=cover and the safe-area insets above are already built
+         for. Any other value leaves an opaque band the app cannot style. -->
+    <meta
+      name="apple-mobile-web-app-status-bar-style"
+      content="black-translucent"
+    />
+
+    <!-- Tints the Android status bar to match the app's own background. -->
+    <meta name="theme-color" content="#f7f8fa" />
+
+    <!-- FIRST-PAINT THEME. React mounts after the browser has already painted
+         once, so a broker who chose dark would see a white flash on every
+         reload before the app caught up. This runs before any paint and sets
+         the class the stylesheet keys on. It MIRRORS lib/theme.ts — same key,
+         same three states, same rule for 'system' — and the two must be kept
+         in step. Inline and dependency-free on purpose: it has to run before
+         the module graph loads. -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('myday.theme');
+          var dark =
+            t === 'dark' ||
+            (t !== 'light' &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches);
+          if (dark) document.documentElement.classList.add('dark');
+          document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

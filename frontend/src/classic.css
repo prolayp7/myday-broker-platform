@@ -1,0 +1,639 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   CLASSIC VIEW — the customer detail panel drawn as a DASH-style paper.
+
+   EVERYTHING HERE IS SCOPED UNDER .classic, the root of
+   routes/leads/classic/ClassicPaper.tsx. Modern never carries that class, so
+   nothing in this file can reach it. The paper deliberately steps outside the
+   token system: a report is black ink on white paper in Arial, which is the
+   point of it — brokers read DASH reports all day and this is the same page.
+
+   Dark mode inverts to a dark sheet rather than disappearing: the paper is a
+   look, not a theme, so it has to survive the theme toggle.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.classic {
+  --cl-desk: #ececec;
+  --cl-edge: #c8c8c8;
+  --cl-ink: #000;
+  --cl-paper: #fff;
+  --cl-grey: #e6e6e6;
+  --cl-band: #e6e6e6;
+  --cl-rule: #ccc;
+  --cl-dim: #555;
+  --cl-focus: #fff8c4;
+  --cl-bar: #000;
+  --cl-bar-ink: #fff;
+
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--cl-ink);
+  background: var(--cl-desk);
+  padding: 12px;
+  min-height: 100%;
+}
+
+.dark .classic {
+  --cl-desk: #141414;
+  --cl-edge: #3a3a3a;
+  --cl-ink: #ececec;
+  --cl-paper: #1c1c1c;
+  --cl-grey: #2b2b2b;
+  --cl-band: #2b2b2b;
+  --cl-rule: #444;
+  --cl-dim: #a8a8a8;
+  --cl-focus: #4a3f14;
+  --cl-bar: #d9d9d9;
+  --cl-bar-ink: #111;
+}
+
+/* ── the sheet ── */
+.cl-paper {
+  max-width: 52rem; /* --width-form */
+  background: var(--cl-paper);
+  border: 1px solid var(--cl-edge);
+  padding: 28px 36px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ── header: name, then policy type · stage · renewal across the width ── */
+.cl-hdr {
+  border-bottom: 2px solid var(--cl-ink);
+  padding-bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cl-name {
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.cl-kv {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  align-items: center;
+  font-size: 13px;
+  padding: 2px 0;
+}
+
+/* ── the grey strip: calls and DASH ── */
+.cl-strip {
+  background: var(--cl-grey);
+  padding: 10px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cl-strip-row {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+.cl-strip-k {
+  min-width: 48px;
+  font-weight: 700;
+}
+
+/* ── sections ── */
+.cl-sec {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.cl-bar {
+  background: var(--cl-bar);
+  color: var(--cl-bar-ink);
+  font-size: 14px;
+  font-weight: 700;
+  padding: 5px 12px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.cl-bar-note {
+  font-weight: 400;
+  font-size: 11px;
+}
+.cl-bar-actions {
+  display: flex;
+  gap: 18px;
+  font-weight: 400;
+  font-size: 12px;
+}
+.cl-sub {
+  background: var(--cl-band);
+  padding: 4px 12px;
+  font-weight: 700;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 6px;
+}
+.cl-sub .cl-link {
+  font-weight: 400;
+}
+.cl-cols {
+  display: flex;
+  gap: 40px;
+  flex-wrap: wrap;
+  padding: 6px 10px 4px;
+}
+.cl-col {
+  flex: 1 1 300px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.cl-empty {
+  padding: 2px 10px;
+  color: var(--cl-dim);
+  font-style: italic;
+}
+.cl-error {
+  padding: 2px 10px;
+  color: #b00000;
+  font-size: 11px;
+}
+
+/* ── a printed line ── */
+.cl-line {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.cl-label {
+  white-space: nowrap;
+}
+.cl-star {
+  color: #b00000;
+  font-weight: 700;
+  margin-left: 1px;
+}
+.dark .cl-star {
+  color: #ff7b7b;
+}
+
+/* ── links drawn as print: underlined words, no button chrome ── */
+.cl-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.cl-link:hover {
+  text-decoration-thickness: 2px;
+}
+.cl-link:focus-visible {
+  outline: 2px solid var(--cl-ink);
+  outline-offset: 2px;
+}
+.cl-bar .cl-link {
+  color: var(--cl-bar-ink);
+}
+.cl-link-sm {
+  font-size: 11px;
+  margin-left: 8px;
+}
+.cl-note {
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--cl-dim);
+}
+.cl-link:disabled {
+  opacity: 0.5;
+  cursor: default;
+  text-decoration: none;
+}
+
+/* ── the text value: bold print until you click it ── */
+.cl-text {
+  font: inherit;
+  font-weight: 700;
+  color: var(--cl-ink);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0 3px;
+  margin: 0 -3px;
+  min-width: 2ch;
+  max-width: 100%;
+  outline: none;
+  transition: background-color 120ms;
+}
+.cl-text:focus {
+  background: var(--cl-focus);
+}
+.cl-text::placeholder {
+  color: var(--cl-dim);
+  font-style: italic;
+  font-weight: 400;
+}
+.cl-text:disabled {
+  color: var(--cl-dim);
+  font-weight: 400;
+}
+
+/* ── the select value: the app's Select, drawn as text with a chevron that
+      appears on hover ── */
+.classic .cl-select[data-slot='select-trigger'] {
+  height: auto;
+  width: auto;
+  min-width: 0;
+  padding: 4px 6px;
+  margin: -4px -6px;
+  gap: 3px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  font: inherit;
+  font-weight: 700;
+  color: var(--cl-ink);
+  transition: background-color 120ms;
+}
+.classic .cl-select[data-slot='select-trigger'][data-state='open'] {
+  background: var(--cl-focus);
+}
+.classic .cl-select[data-slot='select-trigger']:focus-visible {
+  background: var(--cl-focus);
+  box-shadow: none;
+}
+.classic .cl-select[data-slot='select-trigger'] svg {
+  width: 12px;
+  height: 12px;
+  opacity: 0;
+  color: var(--cl-ink);
+  transition: opacity 120ms;
+}
+.classic .cl-select[data-slot='select-trigger']:hover svg,
+.classic .cl-select[data-slot='select-trigger']:focus-visible svg,
+.classic .cl-select[data-slot='select-trigger'][data-state='open'] svg {
+  opacity: 1;
+}
+.classic .cl-select[data-slot='select-trigger'][data-placeholder] {
+  color: var(--cl-dim);
+  font-style: italic;
+  font-weight: 400;
+}
+
+/* ── the date value: DateField in print clothing ── */
+.cl-date {
+  display: inline-block;
+  position: relative;
+}
+.cl-date > div {
+  position: relative;
+}
+.classic .cl-date input {
+  height: auto;
+  width: calc(11ch + 6px);
+  padding: 0 3px;
+  margin: 0 -3px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  font: inherit;
+  font-weight: 700;
+  color: var(--cl-ink);
+  font-variant-numeric: tabular-nums;
+  transition: background-color 120ms;
+}
+.classic .cl-date input:focus-visible {
+  background: var(--cl-focus);
+  box-shadow: none;
+}
+.classic .cl-date input::placeholder {
+  color: var(--cl-dim);
+  font-style: italic;
+  font-weight: 400;
+}
+.classic .cl-date[data-required] input::placeholder {
+  color: var(--cl-dim);
+}
+/* The calendar button sits past the right edge of the date, shown on hover. */
+.classic .cl-date button {
+  right: -18px;
+  opacity: 0;
+  transition: opacity 120ms;
+}
+.classic .cl-date:hover button,
+.classic .cl-date button:focus-visible,
+.classic .cl-date:focus-within button {
+  opacity: 1;
+}
+
+/* ── the address lookup (AddressRow) flattened to a line ── */
+.cl-addr {
+  display: inline-block;
+  min-width: 24ch;
+  flex: 1 1 24ch;
+}
+.classic .cl-addr input {
+  height: auto;
+  padding: 0 3px;
+  margin: 0 -3px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  font: inherit;
+  font-weight: 700;
+  color: var(--cl-ink);
+}
+.classic .cl-addr input:focus-visible {
+  background: var(--cl-focus);
+  box-shadow: none;
+}
+.classic .cl-addr input::placeholder {
+  color: var(--cl-dim);
+  font-style: italic;
+  font-weight: 400;
+}
+.cl-addr-ro {
+  color: var(--cl-dim);
+  font-weight: 700;
+}
+
+/* ── the strip's existing components, flattened ── */
+.classic .cl-strip [data-slot='button'],
+.classic .cl-strip button:not(.call-counter-step):not(.cl-link) {
+  border-radius: 0;
+  box-shadow: none;
+}
+.classic .cl-strip input[data-slot='input'] {
+  border: 0;
+  border-bottom: 1px solid var(--cl-dim);
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  height: auto;
+  padding: 0 4px;
+  font: inherit;
+  font-style: italic;
+}
+.classic .cl-strip input[data-slot='input']:focus-visible {
+  border-bottom-color: var(--cl-ink);
+  background: var(--cl-focus);
+  font-style: normal;
+}
+.classic .cl-strip .call-counter {
+  gap: 6px;
+}
+
+/* ── premium table ── */
+.cl-table {
+  border-collapse: collapse;
+  margin: 4px 10px 0;
+  width: calc(100% - 20px);
+}
+.cl-table th,
+.cl-table td {
+  text-align: left;
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--cl-rule);
+}
+.cl-table th {
+  font-weight: 700;
+  border-bottom: 1px solid var(--cl-ink);
+  white-space: nowrap;
+}
+.cl-table th .cl-select {
+  font-weight: 400;
+  color: var(--cl-dim);
+}
+.cl-table .cl-num {
+  text-align: right;
+  width: 160px;
+  font-variant-numeric: tabular-nums;
+}
+.cl-table .cl-num .cl-text {
+  text-align: right;
+  width: 9ch;
+}
+.cl-table tr.cl-total td {
+  font-weight: 700;
+  border-bottom: 0;
+  border-top: 1px solid var(--cl-ink);
+}
+.cl-savings {
+  padding: 4px 10px;
+}
+.cl-savings[data-worse] b {
+  color: #b00000;
+}
+.dark .cl-savings[data-worse] b,
+.dark .cl-error {
+  color: #ff7b7b;
+}
+
+/* ── motion: a block that arrives, a value DASH just changed ── */
+.cl-enter {
+  animation: cl-fade-in 220ms ease-out;
+}
+@keyframes cl-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.cl-flash .cl-text,
+.cl-flash .cl-select,
+.cl-flash .cl-date input {
+  animation: cl-flash 1.2s ease-out;
+}
+@keyframes cl-flash {
+  from {
+    background-color: var(--cl-focus);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+@media (max-width: 640px) {
+  .cl-paper {
+    padding: 16px;
+  }
+  .cl-kv {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+}
+
+/* ── Admin › Meta Quality (routes/admin/capi/CapiLeads.tsx) ───────────── */
+.cl-paper-wide {
+  max-width: 64rem;
+  margin-inline: auto;
+}
+.cl-back {
+  align-self: flex-start;
+  font-size: 11px;
+}
+.cl-learn {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+.cl-dim {
+  color: var(--cl-dim);
+}
+.cl-grey {
+  color: var(--cl-dim);
+}
+.cl-b {
+  font-weight: 700;
+}
+
+/* The learning bar: a native <progress>, so its width needs no inline style. */
+.cl-progress {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 220px;
+  height: 10px;
+  border: 1px solid var(--cl-ink);
+  border-radius: 0;
+  background: var(--cl-paper);
+  color: var(--cl-ink);
+}
+.cl-progress::-webkit-progress-bar {
+  background: var(--cl-paper);
+}
+.cl-progress::-webkit-progress-value {
+  background: var(--cl-ink);
+}
+.cl-progress::-moz-progress-bar {
+  background: var(--cl-ink);
+}
+.cl-progress-done::-webkit-progress-value {
+  background: #1d7a46;
+}
+.cl-progress-done::-moz-progress-bar {
+  background: #1d7a46;
+}
+
+.cl-alert {
+  margin: 0;
+  padding: 6px 12px;
+  border: 1px solid #e3a3a3;
+  background: #fdecec;
+  color: #b00000;
+  font-weight: 700;
+}
+
+/* Filters drawn as print: a bold value with the browser's own arrow. */
+.cl-fsel {
+  font: inherit;
+  font-weight: 700;
+  color: var(--cl-ink);
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
+.cl-fsel:focus-visible {
+  outline: 2px solid var(--cl-ink);
+  outline-offset: 2px;
+}
+.cl-search {
+  font: inherit;
+  font-style: italic;
+  color: var(--cl-ink);
+  border: 0;
+  border-bottom: 1px solid var(--cl-dim);
+  background: transparent;
+  width: 200px;
+  padding: 0 4px;
+}
+.cl-search:focus-visible {
+  outline: none;
+  border-bottom-color: var(--cl-ink);
+  background: var(--cl-focus);
+  font-style: normal;
+}
+
+/* The one place a Facebook error is read. */
+.cl-msg {
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 1px dashed var(--cl-rule);
+  color: var(--cl-dim);
+  font-size: 12px;
+}
+.cl-msg-on {
+  border: 1px solid #e3a3a3;
+  background: #fdecec;
+  color: #b00000;
+}
+
+.cl-scroll {
+  overflow-x: auto;
+}
+.cl-table-list {
+  margin: 4px 0 0;
+  width: 100%;
+  min-width: 640px;
+}
+.cl-table-list td,
+.cl-table-list th {
+  white-space: nowrap;
+}
+
+/* A refused event: red, and the only clickable thing in the table. */
+.cl-errbtn {
+  font: inherit;
+  font-weight: 700;
+  color: #b00000;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline dotted;
+}
+.cl-errbtn-on {
+  background: #fdecec;
+}
+.cl-errbtn:focus-visible {
+  outline: 2px solid #b00000;
+  outline-offset: 2px;
+}
+
+.cl-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--cl-rule);
+  padding-top: 8px;
+  font-size: 11px;
+  color: var(--cl-dim);
+}
+
+.dark .cl-alert,
+.dark .cl-msg-on,
+.dark .cl-errbtn-on {
+  background: #3a1616;
+  border-color: #7a2c2c;
+  color: #ff9b9b;
+}
+.dark .cl-errbtn {
+  color: #ff7b7b;
+}

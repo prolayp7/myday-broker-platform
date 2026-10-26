@@ -1,0 +1,42 @@
+-- The broker's own judgement: is this lead a real prospect?
+--
+-- WHY. Every Meta lead reaching Quote Done fires CompleteRegistration, and
+-- every one reaching Sold fires Purchase — nobody is asked whether the lead
+-- was real. CompleteRegistration IS the qualified-lead signal (that is what
+-- the event means to us, whatever Meta named it), so Meta's optimisation is
+-- currently being trained on every form-filler who got a quote, junk
+-- included. The point of this column is to train it only on the prospects a
+-- broker judged worth having.
+--
+-- An UNQUALIFIED lead sends NOTHING to Meta — not CompleteRegistration, not
+-- Purchase. The gate itself lives in 0078.
+--
+-- NULLABLE, AND NO DEFAULT. This is the whole design, so it is worth stating
+-- plainly:
+--
+--   true   the broker said yes. Signals fire.
+--   false  the broker said no. Nothing is ever sent for this lead.
+--   null   NOT ASKED YET. Also what "skip" leaves behind — skipping writes
+--          nothing at all, so the question is simply asked again next time.
+--
+-- Defaulting to false would collapse "not asked" and "judged unqualified"
+-- into one fact, and the question could never be re-asked: every lead would
+-- arrive already silently answered "no", and no signal would ever fire again.
+--
+-- BROKERS CANNOT MOVE PAST QUOTE DONE WHILE THIS IS NULL — enforced in
+-- services/lead.py::update_stage, beside the premium guard it is modelled on.
+-- The answer blocks the stage movement rather than being deferred, because a
+-- deferred question is one nobody ever comes back to.
+--
+-- ONLY META LEADS ARE ASKED. A manual/website/tiktok lead has no
+-- platform_leadgen_id, which is Meta's strongest match signal — there is
+-- nothing to attach a conversion to, so both trigger functions already refuse
+-- to signal for them (the `source = 'meta'` gate, 0057/0075) and the service
+-- guard skips them too. Those leads keep this null forever, which is correct:
+-- the question was never applicable, and `source` is what tells the two kinds
+-- of null apart.
+--
+-- NOT BACKFILLED. Every existing row is dummy data (confirmed with the user
+-- 2026-08-07), so there is no real judgement to preserve and no broker who
+-- would be blocked retroactively by a lead they quoted weeks ago.
+alter table lead add column is_qualified boolean;

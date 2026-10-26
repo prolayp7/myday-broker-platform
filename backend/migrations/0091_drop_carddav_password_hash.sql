@@ -1,0 +1,25 @@
+-- Drop broker.carddav_password_hash. Nothing reads it, and nothing can.
+--
+-- 0089 added it by analogy with password_hash, on the assumption that a stored
+-- hash is how a credential is later verified. For CardDAV it is not: Radicale
+-- authenticates against its OWN htpasswd file on its own volume and never
+-- consults this database. So the column was written by exactly one function
+-- (set_carddav_credential) and read by exactly nothing.
+--
+-- A hash of a live credential, kept where nothing verifies it, is a liability
+-- rather than a record — one more copy of a secret to protect, back up and
+-- eventually leak, in exchange for no capability at all.
+--
+-- WHAT IS KEPT is carddav_password_set_at, which is the fact actually worth
+-- having: it is what the broker's own profile screen reads to say "Set on
+-- 3 Aug" rather than "ask an admin". carddav_username stays too — it is the
+-- collection path.
+--
+-- If the auth-plugin route is ever taken (Radicale reading the broker table
+-- instead of a file, which would remove the two-step provisioning in
+-- carddav/README.md), this column comes back then, with a reader written in
+-- the same change. Adding it ahead of that was speculative.
+--
+-- APPLY BY HAND in the Supabase SQL editor.
+
+alter table broker drop column if exists carddav_password_hash;

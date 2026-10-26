@@ -1,0 +1,13 @@
+-- Index for the Admin › Leads stage filter.
+--
+-- The admin leads list (GET /leads) filters by stage; every other filter column
+-- it uses is already indexed — group_id (0008), assigned_broker_id (0008),
+-- source (0017). stage was the one gap. Without this, filtering "show me all
+-- 'Lost' leads" is a sequential scan that grows with total lead volume; with it,
+-- the filter stays cheap at any scale.
+--
+-- Low-cardinality (8 possible values), but still worth indexing: the admin will
+-- routinely filter to one stage, and Postgres uses it to jump straight to that
+-- slice rather than scanning every lead. Cheap to maintain (leads change stage
+-- rarely).
+create index idx_lead_stage on lead(stage);

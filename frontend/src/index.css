@@ -1,0 +1,656 @@
+@import 'tailwindcss';
+/* Animation utilities (animate-in/out, fade, zoom, slide) that every shadcn
+   primitive references. Without this import those classes compile to NOTHING —
+   every select, dropdown, dialog and popover in the app snapped open with no
+   transition, which read as jank everywhere at once. */
+@import 'tw-animate-css';
+@import './assets/fonts/fonts.css';
+/* The Classic (DASH-paper) look for the customer detail panel. Every rule
+   in it is scoped under .classic — see the file's header. */
+@import './classic.css';
+
+/* dark-mode variant (via a .dark class on <html>) */
+@custom-variant dark (&:is(.dark *));
+
+/* ═══════════════════════════════════════════════════════════════════════
+   DESIGN TOKENS — the single source of truth for the whole app.
+   Nothing in the app should hardcode a color, radius, or shadow: every
+   value below is exposed as a Tailwind utility via the @theme block, so
+   components use `bg-primary`, `text-success`, `shadow-card`, `rounded-lg`
+   etc. — never a raw hex, oklch, or arbitrary [..] value.
+
+   Palette is OKLCH (perceptually uniform). Semantic layer maps the SAP
+   Fiori states the design language relies on: success / warning / error /
+   info / neutral, each with a solid + a soft "muted" tint + a foreground.
+   ═══════════════════════════════════════════════════════════════════════ */
+:root {
+  /* ── shape ── SAP Horizon: 0.5rem cards, tighter 0.25rem on controls */
+  --radius: 0.5rem;
+  --radius-control: 0.375rem;
+
+  /* ── surfaces & text ── real Horizon "Morning" values (as OKLCH) ──
+     background #F5F6F7 · card/shell #FFFFFF · text #1D2D3E · label #556B82 */
+  --background: oklch(0.973 0.002 247);
+  --foreground: oklch(0.28 0.03 253);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.28 0.03 253);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.28 0.03 253);
+
+  /* ── brand ── real SAP Horizon blue #0070F2 (hover/active #0064D9) */
+  --primary: oklch(0.575 0.211 258);
+  --primary-foreground: oklch(1 0 0);
+  --secondary: oklch(0.955 0.004 247);
+  --secondary-foreground: oklch(0.32 0.03 253);
+  --muted: oklch(0.955 0.004 247);
+  --muted-foreground: oklch(0.42 0.035 253); /* #44586E label color */
+  --accent: oklch(0.94 0.012 253);
+  --accent-foreground: oklch(0.32 0.03 253);
+  --destructive: oklch(0.505 0.208 27); /* #BB0000 */
+  --destructive-foreground: oklch(1 0 0);
+
+  /* ── lines & focus ── Horizon list border #E5E5E5 / field border #89919A */
+  /* DELIBERATELY FAINT — 1.33:1 against a white card, and kept that way on
+     the user's own judgement after a darker 0.80 (~1.9:1) was tried and
+     looked worse. The panels group by whitespace and their tinted header
+     strip; the line is a hint, not an edge. Contrast maths says this is
+     below perception on some monitors, and the eye disagrees — the eye wins. */
+  --border: oklch(0.905 0.003 247);
+  --input: oklch(0.66 0.014 253);
+  --ring: oklch(0.575 0.211 258);
+
+  /* ── semantic (Fiori Horizon) states — the REAL tokens ──
+     success #107E3E · warning #E76500 · error #BB0000 · info #0070F2 ──
+     each with a soft tint background used behind colored text. */
+  --success: oklch(0.5 0.128 156);
+  --success-foreground: oklch(1 0 0);
+  --success-muted: oklch(0.95 0.045 156);
+  --warning: oklch(0.63 0.18 52);
+  --warning-foreground: oklch(1 0 0);
+  --warning-muted: oklch(0.95 0.06 62);
+  --info: oklch(0.575 0.211 258);
+  --info-foreground: oklch(1 0 0);
+  --info-muted: oklch(0.95 0.04 258);
+  --error: oklch(0.505 0.208 27);
+  --error-foreground: oklch(1 0 0);
+  --error-muted: oklch(0.95 0.045 27);
+
+  /* ── chart / data-viz palette ── Horizon qualitative sequence ──
+     named by product line at the call site; chart-1..5 for other series. */
+  --chart-auto: oklch(0.575 0.211 258); /* blue */
+  --chart-home: oklch(0.62 0.16 200); /* teal */
+  --chart-travel: oklch(0.5 0.128 156); /* green */
+  --chart-1: oklch(0.575 0.211 258);
+  --chart-2: oklch(0.62 0.16 200);
+  --chart-3: oklch(0.5 0.128 156);
+  --chart-4: oklch(0.63 0.18 52);
+  --chart-5: oklch(0.52 0.2 300);
+
+  /* ── elevation ── Horizon uses subtle shadows */
+  --shadow-card: 0 0 0 1px oklch(0 0 0 / 0.05), 0 2px 4px 0 oklch(0 0 0 / 0.06);
+  --shadow-popover: 0 4px 12px -2px oklch(0 0 0 / 0.12);
+
+  /* ── typography ── real 72 typeface, self-hosted */
+  --font-sans: '72', '72full', 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+/* Horizon "Evening" (dark) — shell #1C2228, surfaces slightly lighter */
+.dark {
+  --background: oklch(0.25 0.014 253);
+  --foreground: oklch(0.95 0.008 253);
+  --card: oklch(0.29 0.016 253);
+  --card-foreground: oklch(0.95 0.008 253);
+  --popover: oklch(0.29 0.016 253);
+  --popover-foreground: oklch(0.95 0.008 253);
+  --primary: oklch(0.7 0.16 258);
+  --primary-foreground: oklch(0.18 0.02 253);
+  --secondary: oklch(0.33 0.016 253);
+  --secondary-foreground: oklch(0.95 0.008 253);
+  --muted: oklch(0.33 0.016 253);
+  --muted-foreground: oklch(0.72 0.02 253);
+  --accent: oklch(0.36 0.02 253);
+  --accent-foreground: oklch(0.95 0.008 253);
+  --destructive: oklch(0.62 0.19 27);
+  --destructive-foreground: oklch(0.98 0 0);
+  --border: oklch(0.37 0.016 253);
+  /* 0.62, up from 0.5. The one edge that failed a real rule: an input border
+     at 0.5 sat at 2.35:1 on the dark card, under the 3:1 a control must
+     reach to be findable. 0.62 clears it at ~3.9:1. Panel borders were left
+     at 0.37 on the user's judgement — see light mode. */
+  --input: oklch(0.62 0.02 253);
+  --ring: oklch(0.7 0.16 258);
+
+  --success: oklch(0.68 0.14 156);
+  --success-muted: oklch(0.32 0.05 156);
+  --warning: oklch(0.72 0.16 58);
+  --warning-muted: oklch(0.34 0.07 58);
+  --info: oklch(0.7 0.16 258);
+  --info-muted: oklch(0.32 0.05 258);
+  --error: oklch(0.62 0.19 27);
+  --error-muted: oklch(0.32 0.06 27);
+
+  --shadow-card: 0 0 0 1px oklch(1 0 0 / 0.06), 0 2px 4px 0 oklch(0 0 0 / 0.3);
+  --shadow-popover: 0 4px 12px -2px oklch(0 0 0 / 0.5);
+}
+
+/* Expose every token as a Tailwind utility (bg-*, text-*, border-*,
+   shadow-*, rounded-*). This is what makes the system fully token-based:
+   utilities exist for these names, so no component needs an arbitrary value. */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-muted: var(--success-muted);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-muted: var(--warning-muted);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-muted: var(--info-muted);
+  --color-error: var(--error);
+  --color-error-foreground: var(--error-foreground);
+  --color-error-muted: var(--error-muted);
+
+  --color-chart-auto: var(--chart-auto);
+  --color-chart-home: var(--chart-home);
+  --color-chart-travel: var(--chart-travel);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --radius-lg: var(--radius);
+  --radius-md: var(--radius-control);
+  --radius-sm: calc(var(--radius-control) - 2px);
+
+  --shadow-card: var(--shadow-card);
+  --shadow-popover: var(--shadow-popover);
+
+  --font-sans: var(--font-sans);
+
+  /* extra type step below Tailwind's text-xs, for micro-badges */
+  /* The mobile companion's content width. Capped so the phone layout
+     stays phone-shaped on a tablet instead of stretching to 800px —
+     see routes/mobile/MobileLeads.tsx. 30rem is a large phone's width,
+     which is the widest this layout was designed to read at. */
+  --width-mobile: 30rem;
+  /* THE READABLE SCALE: 2xs 12 · xs 14 · sm 15 · base 16 (px, at the 100%
+     root — see html, further down).
+
+     Every size here is a TOKEN so the whole app rescales from this one block.
+     That matters because of what happened before: labels rendered at 8.75px
+     and the text a broker typed at 10.5px, under a 12px floor on the one
+     screen brokers live in. The fix is to move the tokens, never the call
+     sites — a previous attempt (10963dd) edited text-xs at 228 sites while
+     shadcn's components kept Tailwind's own steps, and the mismatch got
+     WORSE. Change the token, never one side of the pair.
+
+     Our own screens use text-xs for controls and labels; shadcn defaults to
+     text-sm for its dropdown lists, dialog bodies and buttons. So a Select
+     shows its value in text-xs and opens a list in text-sm — one act of
+     reading a field, at two sizes. text-sm is kept ONE PIXEL above text-xs
+     (15 vs 14) rather than a full step, so those two families meet without
+     a visible jump. text-2xs is the micro step for badges and section
+     titles and sits at the 12px floor, not below it.
+
+     Line heights move with the sizes, so rows grow proportionally. */
+  --text-2xs: 0.75rem;
+  --text-2xs--line-height: 1rem;
+  --text-xs: 0.875rem;
+  --text-xs--line-height: 1.25rem;
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: 1.25rem;
+
+  /* named layout widths (avoid arbitrary w-[..] at call sites) */
+  --width-kpi-card: 26rem;
+  /* The two fixed panes left of the detail view. Together they cost 34rem
+     before the detail pane — which hosts the DASH iframe, a full third-party
+     web app — gets any width at all. On a 1366px laptop that leaves DASH
+     under 800px and its own layout starts compressing.
+
+     Narrowed below xl by the media query further down: the rail's labels and
+     the list's two lines both still fit, and the width goes where it is
+     actually needed. */
+  /* The gap between the app's outer edge and anything inside it. One token so
+     the shell, the filter strip and the list all breathe by the same amount —
+     nudged per file they drift, and a pane sitting flush against the window
+     edge is what made this read as unfinished. */
+  --space-edge: 0.75rem;
+  --width-lead-list: 20rem;
+  /* The quote form's width. Sized to the CONTENT, not the window: the driver
+     block, address row and premium table all end around 48rem, so a wider
+     form only stretched the panels — leaving a Premium panel 1179px wide
+     holding fields that stopped at 592px, i.e. half of it empty. Panels that
+     end near their last field read as deliberate; ones that run on read as
+     unfinished. */
+  --width-form: 52rem;
+  /* Fits the longest lead stage ("Sold Pending Docs" / "Awaiting Decision")
+     plus the select's chevron, so the control never truncates its own value. */
+  --width-stage-select: 11.5rem;
+
+  /* Content density — COMPACT (mouse/keyboard), the density this app runs at
+     throughout. A page never mixes densities, so these four are the only
+     control/row heights a screen should use. Consume them as
+     h-(--height-control) rather than picking an h-N by eye — choosing by eye
+     is what kept drifting and mixing densities.
+
+       --height-control  2rem     inputs, selects, buttons, nav links
+       --height-row      2.5rem   list rows carrying two lines of text
+       --height-toolbar  2.75rem  a strip of controls inside a pane
+       --height-bar      3.25rem  the app title bar
+
+     The bar is deliberately the tallest: it carries the brand, the nav and the
+     object being worked on, so it has to read as the top of the application
+     rather than as one more strip of controls. */
+  --height-control: 2rem;
+  --height-row: 2.5rem;
+  --height-toolbar: 2.75rem;
+  --height-bar: 3.25rem;
+
+  /* A rendered DASH page. The source is US Letter portrait (8.5in), so the
+     parsed report is laid out as pages of the same proportion rather than one
+     continuous scroll — a broker comparing it against the PDF is looking at
+     the same page breaks. */
+  --width-dash-page: 8.5in;
+
+  /* Fiori form label column: 4 of 12 grid columns, from OpenUI5's own
+     ResponsiveGridLayout defaults (labelSpanL: 4, columnsL: 2, emptySpanL: 0).
+     Labels take a third of each column, fields the remaining two thirds.
+
+     The rule this enforces is "a consistent vertical line between the label
+     fields and the input fields" — every input in a column starts at the same
+     x, however long its label. Sizing each label to its own text is the
+     obvious thing to do and breaks exactly that line. */
+  --form-label-fraction: 33.333%;
+
+  /* THE COACHMARK'S ONE-SHOT SHAKE (components/WhatsNewCallout.tsx). A short
+     side-to-side nudge that runs once on arrival to pull the eye to the note,
+     then holds still — an announcement that keeps wobbling is an
+     advertisement. Declared as a token so `animate-nudge` is a real utility,
+     the same way every other value here becomes a class; the keyframes must
+     live inside @theme for Tailwind v4 to emit them.
+
+     Under prefers-reduced-motion the global rule further down zeroes every
+     animation-duration, so this simply does not run there — no per-component
+     work, which is the point of putting motion in the token layer. */
+  /* Sits ABOVE the z-50 overlay that dims the screen. Named for what it is
+     rather than a bare number: the relationship "the spotlit control and its
+     note are the one thing above the dimming" is stated here once, and
+     z-coachmark reads as that at the call site. Not z-[60]: a bracket value
+     is a silent fork of the scale, which is the rule this file exists to
+     prevent. Tailwind's default z scale stops at 50, so without this token
+     the class does not exist and the button would sit BEHIND the overlay. */
+  --z-index-coachmark: 60;
+
+  --animate-nudge: nudge 0.6s ease-in-out 0.25s 1;
+  @keyframes nudge {
+    0%, 100% { transform: translateX(0); }
+    20%      { transform: translateX(-5px); }
+    40%      { transform: translateX(5px); }
+    60%      { transform: translateX(-3px); }
+    80%      { transform: translateX(3px); }
+  }
+}
+
+* {
+  border-color: var(--border);
+}
+
+/* Number inputs are used for money and km, never for stepping — the native
+   spinner buttons are dead chrome at compact size and misfire on scroll.
+   Removed globally so every numeric field reads as a plain value box. */
+input[type='number'] {
+  appearance: textfield;
+}
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
+/* BASE 16px, NOT FIORI'S 14. The root used to be 87.5% (1rem = 14px) to copy
+   Fiori's compact enterprise rhythm, and the type tokens below shrank AGAIN on
+   top of it — so a field label rendered at 8.75px and the text a broker typed
+   into an input at 10.5px. Nothing on the lead workspace reached 12px, the
+   floor for readable body text, and it read worst once real data was in the
+   fields: label and value at nearly the same size, fighting instead of
+   stacking. A normal root lets the token scale below land where it should. */
+html {
+  font-size: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  /* THE GREY FLASH. Safari and Chrome paint a translucent grey box over any
+     tapped link or button; native apps never do. Our own :active states are
+     what should show instead, and they cannot while this sits on top. This is
+     the single most recognisable tell that a screen is a web page. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* iOS ZOOMS THE PAGE when a focused input is under 16px, and does not zoom
+   back out — the broker is left on a magnified, sideways-scrolling login.
+   Desktop inputs are text-xs, now 14px, which still trips it on every field.
+
+   Scoped to coarse pointers so the desktop keeps its 14px inputs: this is a
+   touch-device problem only. 16px is Apple's threshold, not a preference.
+
+   Belongs here rather than on each input, because it has to hold for every
+   field on every touch screen — one missed input is one zoomed page. */
+@media (pointer: coarse) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* Nothing here is a text document, and a mis-swipe that selects a customer's
+   name mid-call — bringing up the copy/paste bubble — is pure noise. Inputs
+   are exempt, because typing into one requires selection to work. */
+button,
+[role='button'],
+a,
+label,
+h1,
+h2 {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Rubber-banding the whole document reveals the page background behind a
+   fixed bottom bar, which on iOS reads as the app coming apart. Contain the
+   bounce to the scroller itself. */
+html,
+body {
+  overscroll-behavior-y: none;
+}
+
+/* Below 1280px the two fixed panes give width back to the detail pane, which
+   hosts the DASH iframe — a full third-party web app that starts compressing
+   its own layout under about 800px. The rail's longest label ("Sold Pending
+   Docs") and the lead list's two lines both still fit at these widths; the
+   space is simply worth more on the right. */
+@media (max-width: 1280px) {
+  :root {
+    --width-lead-list: 16rem;
+  }
+}
+
+/* ─── Printing ───────────────────────────────────────────────────────────
+   Only the lead-cost statement is designed to be printed today, and it is
+   printed to make a PDF: the export button calls window.print(), so what a
+   broker receives is the layout already approved on screen rather than a
+   second one drawn by a PDF library and kept in step by hand.
+
+   Everything here is inside @media print, so no screen rendering changes. */
+@media print {
+  /* The app chrome. A statement carries the figures, not the navigation that
+     reached them — individual controls opt out with Tailwind's print:hidden,
+     but the shell's header and sidebar are outside this route's markup. */
+  header,
+  nav,
+  aside {
+    display: none !important;
+  }
+
+  /* Ink. The screen's tinted panels and shadows cost toner and print grey;
+     borders carry the table structure on paper by themselves.
+
+     COLOUR IS NOT FORCED TO BLACK. An earlier version set color:#000 on
+     everything, which flattened the muted secondary text into the same weight
+     as the figures — on paper that made the letterhead subtitle, the reasons
+     and the totals indistinguishable. Backgrounds go; type keeps its
+     hierarchy. */
+  * {
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  /* Struck-through and muted text must still READ as different on paper,
+     where the colour that distinguished them is gone. */
+  .line-through {
+    text-decoration: line-through !important;
+  }
+
+  /* A ledger longer than a page must not split a row across the break, and
+     the header should repeat on every sheet — thead does that natively once
+     the table is allowed to break. */
+  tr {
+    break-inside: avoid;
+  }
+  thead {
+    display: table-header-group;
+  }
+
+  /* Full width: the on-screen max-width exists for reading on a monitor, and
+     honouring it on paper would waste a third of the sheet. */
+  main > div,
+  main {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+
+  @page {
+    margin: 14mm;
+  }
+}
+
+/* ─── Motion ─────────────────────────────────────────────────────────────
+   Press feedback is 100-120ms, ordinary transitions 150-180ms, sheets
+   200-250ms, all ease-out. The goal is an interface that feels RESPONSIVE,
+   not one that is visibly animated — a press that confirms itself instantly
+   beats anything that draws attention to the movement.
+
+   ANYONE WHO ASKS FOR LESS MOTION GETS NONE. Not reduced, none: the point of
+   every transition here is confirming a tap, and a tap confirms itself
+   without movement. Colour and state changes still happen, they simply
+   arrive at once. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* iOS Safari holds ~300ms after a tap waiting to see a double-tap, so every
+   button feels late no matter how fast the transition behind it is. This is
+   worth more than any easing curve on the feel of the app. */
+@media (pointer: coarse) {
+  button,
+  a,
+  [role='button'],
+  input,
+  select {
+    touch-action: manipulation;
+  }
+}
+
+/* The copy buttons on New Policy hide until hover, which keeps a dense form
+   quiet — but a touch screen has no hover, so there they would be a control
+   that cannot be reached at all. Shown always on a coarse pointer.
+
+   Same reasoning as the two rules above: a pointer-device rule belongs in one
+   media query here rather than scattered across components. */
+@media (pointer: coarse) {
+  [data-copy-button] {
+    pointer-events: auto;
+    opacity: 1;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   CALL MARKS — WIREFRAME. Whether a lead has been rung, and how it went.
+
+   Defined here rather than as utility strings in the JSX so the whole
+   treatment lives in one place: the stepper on the DASH line and the count
+   in the lead list have to agree, and agreeing across two files of class
+   lists is how they drift apart.
+
+   Weight is matched to the Parse/DASH controls beside the stepper — muted
+   text, one outline, no internal dividers. At foreground weight the pair
+   read as the heaviest thing on a row whose other controls are borderless
+   text.
+   ═══════════════════════════════════════════════════════════════════════ */
+@layer components {
+  /* One outcome: + icon count −, boxed as a single control. */
+  .call-counter {
+    display: flex;
+    align-items: center;
+    border-radius: var(--radius-control);
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--muted-foreground);
+  }
+
+  .call-counter-step {
+    border-radius: var(--radius-control);
+    padding: 0.125rem 0.25rem;
+  }
+
+  .call-counter-step:hover {
+    background: var(--muted);
+    color: var(--foreground);
+  }
+
+  .call-counter-value {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding-inline: 0.125rem;
+  }
+
+  .call-counter-icon {
+    width: 0.875rem;
+    height: 0.875rem;
+  }
+
+  .call-counter-number {
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Set a follow-up. Sits with the counters because it belongs to the same
+     moment: the call that went unanswered is when a broker decides to try
+     again later. Same muted weight and outline as the steppers — it is a
+     peer of theirs, not a primary action. */
+  .call-reminder {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    border-radius: var(--radius-control);
+    border: 1px solid var(--border);
+    background: var(--card);
+    padding: 0.125rem 0.375rem;
+    font-size: var(--text-2xs);
+    color: var(--muted-foreground);
+  }
+
+  .call-reminder:hover {
+    background: var(--muted);
+    color: var(--foreground);
+  }
+
+  /* One preset inside the Remind popover. Full-width rows rather than a grid
+     of chips: the list is read top to bottom ("how far out?") and a row is a
+     bigger target than a chip, which matters on a control used one-handed
+     between calls. */
+  .call-reminder-option {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    border-radius: var(--radius-control);
+    padding: 0.375rem 0.5rem;
+    text-align: left;
+    font-size: var(--text-xs);
+    color: var(--foreground);
+  }
+
+  .call-reminder-option:hover {
+    background: var(--muted);
+  }
+
+  /* Neither column wraps. At the old width "In 2 days" broke across two lines
+     and the resolved date broke before its "AM", which turned a three-row
+     list into a six-row one and lost the alignment that made it scannable. */
+  .call-reminder-option > * {
+    white-space: nowrap;
+  }
+
+  /* The resolved date beside each preset. Shown because "next week" is
+     ambiguous and a broker booking around a renewal needs the actual day. */
+  .call-reminder-when {
+    font-size: var(--text-2xs);
+    color: var(--muted-foreground);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* The time row under the calendar. A plain time input rather than a second
+     wheel or a grid of slots: the date is the decision, the time is usually
+     left where it lands, and one field that accepts "2pm" typed is faster
+     than picking from a list nobody reads. */
+  .call-reminder-time {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    border-top: 1px solid var(--border);
+    padding: 0.5rem 0.625rem;
+    font-size: var(--text-2xs);
+    color: var(--muted-foreground);
+  }
+
+  /* The lead list's attempt count. Semantic tokens, not raw palette colours:
+     success = they picked up, error = they did not. A lead nobody has rung
+     shows nothing at all, so the untouched rows are the blank ones. */
+  .call-tally {
+    width: 0.75rem;
+    flex-shrink: 0;
+    text-align: center;
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .call-tally-answered {
+    color: var(--success);
+  }
+
+  .call-tally-missed {
+    color: var(--error);
+  }
+}

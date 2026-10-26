@@ -1,0 +1,13 @@
+venv/
+__pycache__/
+*.pyc
+.env
+# .env alone does NOT match .env.staging / .env.local — every one of these
+# holds a service-role key, so they are matched explicitly rather than by
+# hoping the bare pattern covers them.
+.env.*
+!.env.example
+# Service-account keys and any other secrets — NEVER commit these.
+.secrets/
+*.json.key
+docai-key.json

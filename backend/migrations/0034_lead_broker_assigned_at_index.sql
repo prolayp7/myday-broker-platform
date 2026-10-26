@@ -1,0 +1,22 @@
+-- Composite index for the broker's own-leads screen (GET /leads/mine).
+--
+-- That query's exact pattern is: filter lead.assigned_broker_id = <me>, then
+-- sort by lead.assigned_at DESC (newest to land in MY inbox first), then page.
+-- The existing idx_lead_assigned_broker_id (0008) serves the FILTER, but
+-- Postgres then has to SORT the matched rows by assigned_at with no index to
+-- help — cheap today, but as a broker's book grows to thousands of leads that
+-- sort becomes the bottleneck.
+--
+-- This composite index covers filter + sort in one indexed traversal: rows for
+-- a given broker are already stored in assigned_at DESC order, so the query
+-- reads them straight off the index, no separate sort step, and pagination
+-- (.range) just walks the index. Keeps /leads/mine flat-fast at any book size.
+--
+-- Mirrors idx_lead_assignment_broker (0023), which does the same (broker_id,
+-- time DESC) trick for the custody-history table.
+--
+-- NOTE: assigned_at is null for a pooled (unassigned) lead, but this index is
+-- only ever used with assigned_broker_id = <a real broker>, where assigned_at
+-- is always set — so the nulls never participate.
+create index idx_lead_broker_assigned_at
+  on lead(assigned_broker_id, assigned_at desc);

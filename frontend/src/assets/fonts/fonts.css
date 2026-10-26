@@ -1,0 +1,26 @@
+/* SAP "72" typeface — self-hosted (open 72-Web files from
+   @sap-theming/theming-base-content). This is the real Fiori font; loading it
+   locally means the app renders in 72, not a system fallback. Vite fingerprints
+   the URLs at build. Weights: 400 Regular, 600 Semibold, 700 Bold. */
+
+@font-face {
+  font-family: '72';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('./72-Regular-full.woff2') format('woff2');
+}
+@font-face {
+  font-family: '72';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('./72-Semibold-full.woff2') format('woff2');
+}
+@font-face {
+  font-family: '72';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('./72-Bold-full.woff2') format('woff2');
+}

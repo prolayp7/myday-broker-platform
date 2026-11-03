@@ -15,7 +15,7 @@ _DRIVER_SELECT = (
     # because this select is explicit — a column missing from it reaches no
     # screen, and the Download button would stay disabled with the path
     # sitting in the database.
-    "dash_report_path, "
+    "dash_report_path, dash_notes, "
     # THE QUALIFICATION FACTS (0114). at_fault_claims_6y comes from the report's
     # own header; convictions_3y and licensed_5y_plus are the broker's answers
     # in the qualify dialog, which reads them back from here.

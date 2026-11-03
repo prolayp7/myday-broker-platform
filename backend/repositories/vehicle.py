@@ -14,17 +14,17 @@ _VEHICLE_SELECT = (
 
 
 def list_for_driver(driver_id: str):
-    """This driver's vehicles, oldest first.
+    """This driver's vehicles, newest first.
 
-    Ordered by creation so the list does not reshuffle while a broker is
-    editing it — a row changing position mid-call is disorienting, and a
-    household's cars have no more meaningful order to impose.
+    Newest first because a car the broker just added belongs at the top, where
+    they are looking — not under every existing one. Still ordered by creation,
+    so the list never reshuffles while it is being edited.
     """
     return (
         supabase.table("vehicle")
         .select(_VEHICLE_SELECT)
         .eq("driver_id", driver_id)
-        .order("created_at")
+        .order("created_at", desc=True)
         .execute()
     )
 

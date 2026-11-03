@@ -31,6 +31,8 @@ import { AddressRow } from '../AddressRow'
 import { RELATIONSHIPS } from '../driverOptions'
 import { STRUCTURES } from '../propertyOptions'
 import { RENTAL_ROLES, useProperties } from '../useProperties'
+import { CheckThese, DashHistorySections } from './DashHistoryLines'
+import { onPaperCopy, rawAddress, rawDate, rawText, type CopyAs } from './copy'
 import { InlineDate, InlineSelect, InlineText, Line } from './inline'
 
 // THE CLASSIC VIEW: the customer detail panel as a DASH-style paper report.
@@ -156,6 +158,8 @@ export function ClassicPaper({
   // A DASH fill changes many values at once; flash the applicant's lines for a
   // moment so the broker sees WHAT moved rather than hunting for it.
   const [flash, setFlash] = useState(false)
+  // Bumped after every DASH reading so Insurance Gaps and Claims refetch.
+  const [historyVersion, setHistoryVersion] = useState(0)
   useEffect(() => {
     if (!flash) return
     const t = setTimeout(() => setFlash(false), 1300)
@@ -169,11 +173,22 @@ export function ClassicPaper({
     : leadName
 
   return (
-    <div className="classic min-w-0">
+    <div className="classic min-w-0" onCopy={onPaperCopy}>
       <div className="cl-paper">
         {/* ── header ── */}
         <div className="cl-hdr">
-          <div className="cl-name">{name.toUpperCase()}</div>
+          {/* The name, with the call counters on its right: logging a call is
+              the most frequent action here, and it is about this person. */}
+          <div className="cl-name-row">
+            <div className="cl-name">{name.toUpperCase()}</div>
+            <CallMarks
+              answeredCount={answeredCount}
+              noAnswerCount={noAnswerCount}
+              busy={callCountSaving}
+              onAdjust={onAdjustCallCount}
+              onRemind={onRemind}
+            />
+          </div>
           <div className="cl-kv">
             <Line label="Policy Type">
               <InlineSelect
@@ -219,18 +234,8 @@ export function ClassicPaper({
           </div>
         </div>
 
-        {/* ── the grey strip: calls, then DASH ── */}
+        {/* ── the grey strip: DASH ── */}
         <div className="cl-strip">
-          <div className="cl-strip-row">
-            <span className="cl-strip-k">Calls</span>
-            <CallMarks
-              answeredCount={answeredCount}
-              noAnswerCount={noAnswerCount}
-              busy={callCountSaving}
-              onAdjust={onAdjustCallCount}
-              onRemind={onRemind}
-            />
-          </div>
           {applicant && (
             <div className="cl-strip-row">
               <span className="cl-strip-k">DASH</span>
@@ -238,6 +243,7 @@ export function ClassicPaper({
                 driverId={applicant.id}
                 hasReport={Boolean(applicant.dash_report_path)}
                 onFilled={async () => {
+                  setHistoryVersion((v) => v + 1)
                   await onDriversChanged()
                   setFlash(true)
                 }}
@@ -245,6 +251,14 @@ export function ClassicPaper({
             </div>
           )}
         </div>
+
+        {applicant?.dash_notes && applicant.dash_notes.length > 0 && (
+          <CheckThese
+            driverId={applicant.id}
+            notes={applicant.dash_notes}
+            onDismissed={onDriversChanged}
+          />
+        )}
 
         {/* ── Applicant ── */}
         <section className="cl-sec">
@@ -341,6 +355,15 @@ export function ClassicPaper({
           </section>
         )}
 
+        {/* ── Insurance gaps and claims, read off the DASH report ── */}
+        {applicant && (
+          <DashHistorySections
+            driverId={applicant.id}
+            reportPath={applicant.dash_report_path}
+            refreshKey={historyVersion}
+          />
+        )}
+
         {/* ── Premium ── */}
         <section className="cl-sec">
           <div className="cl-bar">
@@ -405,19 +428,24 @@ function DriverLines({
 }) {
   const main = driver.is_principal
   const req = (k: keyof Driver) => main && REQUIRED.has(k)
-  const text = (k: keyof DriverPatch, label: string, type?: 'tel' | 'email') => (
-    <Line label={label} required={req(k)}>
+  const text = (k: keyof DriverPatch, label: string, type?: 'tel' | 'email', copyAs?: CopyAs) => (
+    <Line
+      label={label}
+      required={req(k)}
+      copy={rawText((driver[k] as string | null) ?? '', copyAs)}
+    >
       <InlineText
         label={label}
         type={type}
         value={driver[k] as string | null}
         required={req(k)}
+        copyAs={copyAs}
         onSave={(v) => onSave({ [k]: v || null } as DriverPatch)}
       />
     </Line>
   )
   const date = (k: keyof DriverPatch, label: string) => (
-    <Line label={label} required={req(k)}>
+    <Line label={label} required={req(k)} copy={rawDate(driver[k] as string | null)}>
       <InlineDate
         label={label}
         value={driver[k] as string | null}
@@ -427,7 +455,7 @@ function DriverLines({
     </Line>
   )
   const marital = (
-    <Line label="Marital Status">
+    <Line label="Marital Status" copy={driver.marital_status}>
       <InlineSelect
         label="Marital status"
         value={driver.marital_status}
@@ -445,20 +473,20 @@ function DriverLines({
         {text('middle_name' as keyof DriverPatch, 'Middle name')}
         {text('last_name' as keyof DriverPatch, 'Last name')}
         {main && (
-          <Line label="Address" required>
+          <Line label="Address" required copy={rawAddress(driver)}>
             <span className="cl-addr" data-required={req('street_address') && !driver.street_address ? '' : undefined}>
               <AddressRow driver={driver} onSave={onSave} />
             </span>
           </Line>
         )}
-        {main && text('phone', 'Phone', 'tel')}
+        {main && text('phone', 'Phone', 'tel', 'digits')}
         {main && text('email', 'Email', 'email')}
-        {text('license_number', 'Licence Number')}
+        {text('license_number', 'Licence Number', undefined, 'compact')}
         {!main && marital}
       </div>
       <div className="cl-col">
         {main && (
-          <Line label="Gender" required>
+          <Line label="Gender" required copy={driver.gender}>
             <InlineSelect
               label="Gender"
               value={driver.gender}
@@ -489,13 +517,14 @@ function VehicleLines({
   disabled: boolean
   onSave: (patch: Partial<QuoteVehicle>) => void
 }) {
-  const text = (k: keyof QuoteVehicle, label: string, type?: 'number') => (
-    <Line label={label}>
+  const text = (k: keyof QuoteVehicle, label: string, type?: 'number', copyAs?: CopyAs) => (
+    <Line label={label} copy={rawText(String(v[k] ?? ''), copyAs)}>
       <InlineText
         label={label}
         type={type}
         value={v[k] as string}
         disabled={disabled}
+        copyAs={copyAs}
         onSave={(x) => onSave({ [k]: x } as Partial<QuoteVehicle>)}
       />
     </Line>
@@ -512,23 +541,29 @@ function VehicleLines({
       />
     </Line>
   )
-  const financed = v.ownership === 'Financed' || v.ownership === 'Leased'
   return (
     <div className="cl-cols">
       <div className="cl-col">
         {text('yearMakeModel', 'Make / Model')}
-        {text('vin', 'VIN')}
+        {text('vin', 'VIN', undefined, 'compact')}
         <Line label="Condition">
           <InlineSelect
             label="Condition"
             value={v.condition}
             options={CONDITIONS}
             disabled={disabled}
-            onChange={(x) => onSave({ condition: x as QuoteVehicle['condition'] })}
+            onChange={(x) =>
+              onSave({
+                condition: x as QuoteVehicle['condition'],
+                // A new car is bought with delivery mileage: 500 km unless the
+                // broker has already typed a figure.
+                ...(x === 'New' && !v.kmAtPurchase ? { kmAtPurchase: '500' } : {}),
+              })
+            }
             clearable
           />
         </Line>
-        <Line label="Purchase Date">
+        <Line label="Purchase Date" copy={rawDate(v.purchaseDate)}>
           <InlineDate
             label="Purchase date"
             value={v.purchaseDate}
@@ -546,7 +581,6 @@ function VehicleLines({
             clearable
           />
         </Line>
-        {financed && text('financeCompany', 'Finance Company')}
       </div>
       <div className="cl-col">
         {text('annualKm', 'Annual KM', 'number')}
@@ -644,29 +678,33 @@ function PremiumLines({
 
   return (
     <>
-      <table className="cl-table">
+      <table className="cl-table cl-premium">
         <thead>
           <tr>
             <th />
             <th className="cl-num">
-              Current{' '}
-              <InlineSelect
-                label="Current premium unit"
-                value={currentUnit}
-                options={UNITS}
-                placeholder="Year/Month"
-                onChange={(u) => u && onSave({ current_premium_unit: u as 'year' | 'month' })}
-              />
+              <div className="cl-th-stack">
+                Current
+                <InlineSelect
+                  label="Current premium unit"
+                  value={currentUnit}
+                  options={UNITS}
+                  placeholder="Year/Month"
+                  onChange={(u) => u && onSave({ current_premium_unit: u as 'year' | 'month' })}
+                />
+              </div>
             </th>
             <th className="cl-num">
-              Proposed{' '}
-              <InlineSelect
-                label="Proposed premium unit"
-                value={proposedUnit}
-                options={UNITS}
-                placeholder="Year/Month"
-                onChange={(u) => u && onSave({ new_premium_unit: u as 'year' | 'month' })}
-              />
+              <div className="cl-th-stack">
+                Proposed
+                <InlineSelect
+                  label="Proposed premium unit"
+                  value={proposedUnit}
+                  options={UNITS}
+                  placeholder="Year/Month"
+                  onChange={(u) => u && onSave({ new_premium_unit: u as 'year' | 'month' })}
+                />
+              </div>
             </th>
           </tr>
         </thead>
@@ -795,7 +833,7 @@ function PropertyLines({
   const isCondo = p.property_type === 'Condo'
 
   const text = (k: keyof Property, label: string) => (
-    <Line label={label}>
+    <Line label={label} copy={rawText((p[k] as string | null) ?? '')}>
       <InlineText
         label={`${title} ${label}`}
         value={p[k] as string | null}
@@ -805,7 +843,7 @@ function PropertyLines({
   )
   // '' means "not collected", which is null — not zero.
   const num = (k: keyof Property, label: string) => (
-    <Line label={label}>
+    <Line label={label} copy={p[k] == null ? '' : String(p[k])}>
       <InlineText
         label={`${title} ${label}`}
         type="number"
@@ -815,7 +853,7 @@ function PropertyLines({
     </Line>
   )
   const date = (k: keyof Property, label: string) => (
-    <Line label={label}>
+    <Line label={label} copy={rawDate(p[k] as string | null)}>
       <InlineDate
         label={`${title} ${label}`}
         value={p[k] as string | null}

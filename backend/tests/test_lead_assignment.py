@@ -2727,6 +2727,94 @@ class TestABrokerCanOptThemselvesIn:
 
 
 # ── DASH prefill ─────────────────────────────────────────────────────────
+class TestDashReadingIsSaved:
+    """Claude's reading through to the real tables, gaps and claims included.
+
+    apply_report is the only code that writes these, and replace_dash_history
+    (0135) has column checks a stub would never hit.
+    """
+
+    def _driver(self, sandbox, **cols):
+        group = sandbox.group()
+        broker = sandbox.broker(group["id"], "B", daily_cap=5, max_cap=5)
+        lead = sandbox.lead(group["id"], "dash")
+        assert sandbox.assign(lead["id"]) == broker["id"]
+        return supabase.table("driver").insert({
+            "lead_id": lead["id"], "is_principal": True,
+            "relationship_to_applicant": "Applicant", **cols,
+        }).execute().data[0]
+
+    def _reading(self, **over):
+        from services import dash_apply
+        from test_dash_flow import _raw
+
+        terms = [
+            {"start": "2021-01-01", "end": "2022-01-01", "status": "Expired",
+             "insurer": "A", "vins": ["WA1FAAFYXN2050081"]},
+            {"start": "2022-06-01", "end": "2026-06-29", "status": "Active",
+             "insurer": "A", "vins": ["WA1FAAFYXN2050081"]},
+        ]
+        return dash_apply.from_claude(_raw(
+            possible_gap_marker=True, applicant_terms=terms, **over,
+        ))
+
+    def _saved(self, driver_id):
+        from repositories import dash_history
+
+        return (dash_history.list_gaps(driver_id).data or [],
+                dash_history.list_claims(driver_id).data or [])
+
+    def test_gaps_and_claims_reach_the_tables(self, sandbox):
+        from services import dash_apply
+
+        driver = self._driver(sandbox)
+        dash_apply.apply_report(driver["id"], self._reading())
+        gaps, claims = self._saved(driver["id"])
+        assert [g["gap_from"] for g in gaps] == ["2022-01-01"]
+        assert [c["date_of_loss"] for c in claims] == ["2025-07-30"]
+        assert claims[0]["whose"] == "applicant"
+
+    def test_the_fields_are_filled_from_claude(self, sandbox):
+        from services import dash_apply
+
+        driver = self._driver(sandbox)
+        result = dash_apply.apply_report(driver["id"], self._reading())
+        row = supabase.table("driver").select("*").eq("id", driver["id"]).execute().data[0]
+        assert row["license_number"] == "B0023-64708-70101"
+        assert row["city"] == "Scarborough"
+        assert result["vehicles_added"] == 1
+
+    def test_claude_never_overwrites_what_the_broker_typed(self, sandbox):
+        from services import dash_apply
+
+        driver = self._driver(sandbox, license_number="BROKER-TYPED-THIS", city="Typed")
+        result = dash_apply.apply_report(driver["id"], self._reading())
+        row = supabase.table("driver").select("*").eq("id", driver["id"]).execute().data[0]
+        assert (row["license_number"], row["city"]) == ("BROKER-TYPED-THIS", "Typed")
+        assert "license_number" in result["driver_skipped"]
+
+    def test_a_second_upload_replaces_gaps_and_claims_and_adds_no_copies(self, sandbox):
+        from services import dash_apply
+
+        driver = self._driver(sandbox)
+        dash_apply.apply_report(driver["id"], self._reading())
+        result = dash_apply.apply_report(driver["id"], self._reading())
+        gaps, claims = self._saved(driver["id"])
+        assert (len(gaps), len(claims), result["vehicles_added"]) == (1, 1, 0)
+
+    def test_a_fallback_reading_leaves_gaps_and_claims_alone(self, sandbox):
+        from pathlib import Path
+
+        from services import dash_apply
+
+        driver = self._driver(sandbox)
+        dash_apply.apply_report(driver["id"], self._reading())
+        markdown = Path(__file__).parent.joinpath("fixtures", "dash_sample.md").read_text(encoding="utf-8")
+        dash_apply.apply_report(driver["id"], dash_apply.from_fallback(markdown))
+        gaps, claims = self._saved(driver["id"])
+        assert (len(gaps), len(claims)) == (1, 1)
+
+
 class TestDashPrefill:
     """A DASH report fills what is blank and never touches what the broker
     typed.
@@ -2749,8 +2837,14 @@ class TestDashPrefill:
         return row, broker
 
     def _markdown(self):
+        """The fixture as a reading, which is what apply_report takes."""
         from pathlib import Path
-        return (Path(__file__).parent / "fixtures" / "dash_sample.md").read_text(encoding="utf-8")
+
+        from services import dash_apply
+
+        return dash_apply.from_fallback(
+            (Path(__file__).parent / "fixtures" / "dash_sample.md").read_text(encoding="utf-8")
+        )
 
     def test_blank_fields_are_filled(self, sandbox):
         """Otherwise the feature does nothing at all."""
@@ -3000,9 +3094,11 @@ class TestTheGuardsHoldOnEveryDoor:
     def _report(self):
         from pathlib import Path
 
-        return Path(__file__).parent.joinpath(
+        from services import dash_apply
+
+        return dash_apply.from_fallback(Path(__file__).parent.joinpath(
             "fixtures", "dash_sample.md"
-        ).read_text(encoding="utf-8")
+        ).read_text(encoding="utf-8"))
 
     def test_dash_adds_no_vehicles_to_a_property_only_policy(self, sandbox):
         """THE DOOR LEFT OPEN. add_vehicle refuses a car here; dash_apply wrote

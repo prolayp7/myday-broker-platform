@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
+import { Copy } from 'lucide-react'
+import { toast } from 'sonner'
 import { DateField } from '@/components/DateField'
 import {
   Select,
@@ -33,9 +35,12 @@ export function InlineText({
   className,
   disabled,
   minSize = 2,
+  copyAs,
 }: {
   value: string | null | undefined
   onSave: (next: string) => void
+  /** How Ctrl+C copies this field's text (copy.ts). */
+  copyAs?: 'digits' | 'compact'
   /** Shows "required" in the gap while empty. Nothing here enforces it — the
    *  stage gate in services/lead.py does — this only says it ahead of time. */
   required?: boolean
@@ -74,7 +79,9 @@ export function InlineText({
     onSave(next)
   }
 
-  const placeholder = required ? 'required' : disabled ? '—' : ''
+  // A space, not '': it leaves :placeholder-shown true on an empty field, so
+  // the stylesheet can give the blank a fill-in line's width.
+  const placeholder = required ? 'required' : disabled ? '—' : ' '
   // Width follows the content, like print: an input sized to its text reads as
   // a word on a line, not as a box waiting to be filled.
   const size = Math.max(text.length, placeholder.length, minSize) + 1
@@ -90,6 +97,7 @@ export function InlineText({
       aria-label={label}
       placeholder={placeholder}
       data-required={required && saved === '' ? '' : undefined}
+      data-copy={copyAs}
       onChange={(e) => setText(e.target.value)}
       onBlur={commit}
       onKeyDown={(e) => {
@@ -198,11 +206,15 @@ export function Line({
   required,
   children,
   className,
+  copy,
 }: {
   label: string
   required?: boolean
   children: React.ReactNode
   className?: string
+  /** The raw value the copy button puts on the clipboard (copy.ts). No
+   *  button while it is empty. */
+  copy?: string | null
 }) {
   return (
     <div className={cn('cl-line', className)}>
@@ -216,6 +228,28 @@ export function Line({
         :
       </span>{' '}
       {children}
+      {copy && <CopyButton value={copy} label={label} />}
     </div>
+  )
+}
+
+/** The small copy button shown on hover — on a printed line or a table cell.
+ *  Puts exactly `value` on the clipboard (already raw: see copy.ts). */
+export function CopyButton({ value, label }: { value: string; label: string }) {
+  return (
+    <button
+      type="button"
+      className="cl-copy"
+      aria-label={`Copy ${label}`}
+      title={`Copy ${value}`}
+      onClick={() =>
+        navigator.clipboard.writeText(value).then(
+          () => toast(`Copied: ${value}`),
+          () => toast.error('Could not copy'),
+        )
+      }
+    >
+      <Copy aria-hidden="true" />
+    </button>
   )
 }

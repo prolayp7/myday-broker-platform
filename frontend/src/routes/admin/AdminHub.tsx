@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Route, ChevronRight, Users, Megaphone, Percent, Receipt, Globe, FileSearch } from 'lucide-react'
+import { Route, ChevronRight, Users, Megaphone, Percent, Receipt, Globe, FileSearch, MailCheck } from 'lucide-react'
 import { AppShell } from '@/components/AppShell'
 
 // ─── WIREFRAME ──────────────────────────────────────────────────────────
@@ -72,6 +72,13 @@ const TILES: Tile[] = [
       'Which brokers receive leads from the website quote form, and how many a day. Separate from Facebook routing and limits.',
     to: '/admin/website-leads',
     icon: Globe,
+  },
+  {
+    title: 'Review senders',
+    description:
+      'The email addresses allowed to send files for submission review. Mail from anyone else is not read.',
+    to: '/admin/review-senders',
+    icon: MailCheck,
   },
 ]
 

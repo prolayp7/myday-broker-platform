@@ -14,11 +14,11 @@ import logging
 from uuid import UUID
 
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from starlette.concurrency import run_in_threadpool
 
 from auth_dependencies import get_current_broker
-from schemas.dash import DashUrlRequest
+from schemas.dash import DashClaimLeftOut, DashUrlRequest
 from services import dash as service
 
 logger = logging.getLogger("myday.dash")
@@ -36,17 +36,17 @@ _MAX_BYTES = 20 * 1024 * 1024
 async def upload_dash_report(
     driver_id: UUID,
     file: UploadFile = File(...),
+    confirm: bool = Form(False),
     broker: dict = Depends(get_current_broker),
 ):
-    """Read an uploaded DASH PDF and fill this driver's blank fields.
+    """Read an uploaded DASH PDF and fill this driver.
 
     Returns what was filled and what was left alone, so the broker can see the
-    result without comparing the form against the PDF themselves.
+    result without comparing the form against the PDF themselves. A copy of
+    the PDF is kept (services/dash.py, _store_copy).
 
-    THE PDF IS NOT STORED. It is read, used, and dropped — the broker keeps
-    the report on DASH's own site, and holding a second copy of someone's
-    claims history would be retaining customer data for no purpose this
-    feature needs.
+    409 when the report looks like it belongs to someone else; the same upload
+    with confirm=true is the broker's "Use it anyway".
     """
     contents = await file.read()
     if not contents:
@@ -69,7 +69,7 @@ async def upload_dash_report(
     # before the response returns. The threadpool changes who is blocked, not
     # the ordering.
     return await run_in_threadpool(
-        service.apply_pdf, str(driver_id), broker["id"], contents
+        service.apply_pdf, str(driver_id), broker["id"], contents, confirm
     )
 
 
@@ -103,7 +103,42 @@ async def parse_dash_report_url(
 
     # Off the event loop, for the reason spelled out on the upload route.
     return await run_in_threadpool(
-        service.apply_pdf, str(driver_id), broker["id"], response.content
+        service.apply_pdf, str(driver_id), broker["id"], response.content, request.confirm
+    )
+
+
+@router.get("/drivers/{driver_id}/dash-history")
+async def dash_history(
+    driver_id: UUID,
+    broker: dict = Depends(get_current_broker),
+):
+    """Insurance gaps and claims saved from this driver's last DASH reading.
+
+    Read-only; shown on New Policy under "Company Insured". Same ownership
+    guard as the upload routes.
+    """
+    return await run_in_threadpool(service.history, str(driver_id), broker["id"])
+
+
+@router.post("/drivers/{driver_id}/dash-notes/dismiss", status_code=204)
+async def dismiss_dash_notes(
+    driver_id: UUID,
+    broker: dict = Depends(get_current_broker),
+):
+    """Clear "Check these" until the next reading."""
+    await run_in_threadpool(service.dismiss_notes, str(driver_id), broker["id"])
+
+
+@router.patch("/drivers/{driver_id}/dash-claims/{claim_id}", status_code=204)
+async def set_dash_claim_left_out(
+    driver_id: UUID,
+    claim_id: UUID,
+    request: DashClaimLeftOut,
+    broker: dict = Depends(get_current_broker),
+):
+    """Leave out (or bring back) a claim by a driver who has their own insurance."""
+    await run_in_threadpool(
+        service.set_claim_left_out, str(driver_id), broker["id"], str(claim_id), request.left_out
     )
 
 

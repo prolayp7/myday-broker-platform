@@ -66,6 +66,13 @@
   flex-direction: column;
   gap: 8px;
 }
+.cl-name-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
 .cl-name {
   font-size: 22px;
   font-weight: 700;
@@ -151,6 +158,14 @@
   flex-direction: column;
   gap: 3px;
 }
+/* Two thirds / one third, not halves: the left column carries the long values
+   (address, make and model, VIN); the right carries dates and short picks. */
+.cl-cols > .cl-col:first-child {
+  flex: 2 1 300px;
+}
+.cl-cols > .cl-col:last-child {
+  flex: 1 1 230px;
+}
 .cl-empty {
   padding: 2px 10px;
   color: var(--cl-dim);
@@ -167,7 +182,9 @@
   min-width: 0;
   display: flex;
   align-items: baseline;
-  gap: 4px;
+  /* 7px, not 4: values sit 3px into the gap (margin -3px, so the focus tint
+     has room), and the hover box needs a clear space after the colon. */
+  gap: 7px;
   flex-wrap: wrap;
 }
 .cl-label {
@@ -229,8 +246,16 @@
   margin: 0 -3px;
   min-width: 2ch;
   max-width: 100%;
+  /* Exactly as wide as the text. The `size` attribute counts characters in a
+     width wider than Arial's, so long values (make and model) reserved more
+     room than they print in and fell to a line of their own. Browsers without
+     field-sizing keep using `size`. */
+  field-sizing: content;
   outline: none;
   transition: background-color 120ms;
+}
+.cl-text:placeholder-shown {
+  min-width: 8ch;
 }
 .cl-text:focus {
   background: var(--cl-focus);
@@ -342,6 +367,11 @@
   flex: 1 1 24ch;
 }
 .classic .cl-addr input {
+  /* As wide as the address, so the postal code is never clipped; a long one
+     may run into the column gap, which is empty. */
+  field-sizing: content;
+  width: auto;
+  min-width: 24ch;
   height: auto;
   padding: 0 3px;
   margin: 0 -3px;
@@ -369,7 +399,10 @@
 
 /* ── the strip's existing components, flattened ── */
 .classic .cl-strip [data-slot='button'],
-.classic .cl-strip button:not(.call-counter-step):not(.cl-link) {
+.classic .cl-strip button:not(.call-counter-step):not(.cl-link),
+.classic .cl-name-row [data-slot='button'],
+.classic .cl-name-row button:not(.call-counter-step):not(.cl-link),
+.classic .cl-name-row .call-counter {
   border-radius: 0;
   box-shadow: none;
 }
@@ -410,6 +443,25 @@
   border-bottom: 1px solid var(--cl-ink);
   white-space: nowrap;
 }
+/* "Current" over its Year/Month picker, both flush right over the figures.
+   The picker is a flex box, so it ignored the cell's text-align and sat at
+   the left on a line of its own. */
+.cl-th-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+/* Premium columns read left-aligned: header, Year/Month and the amount all
+   start at the same edge. */
+.cl-table.cl-premium th.cl-num,
+.cl-table.cl-premium td.cl-num,
+.cl-table.cl-premium .cl-num .cl-text {
+  text-align: left;
+}
+/* Premium amounts: the fill-in line on section hover, like the fields. */
+.classic .cl-sec:hover .cl-table .cl-text:not(:disabled) {
+  border-bottom-color: #9a9a9a;
+}
 .cl-table th .cl-select {
   font-weight: 400;
   color: var(--cl-dim);
@@ -437,6 +489,140 @@
 .dark .cl-savings[data-worse] b,
 .dark .cl-error {
   color: #ff7b7b;
+}
+
+/* ── where to type: a paper form's fill-in line, not boxes ──
+      Hovering a column draws a dotted rule under every field in it; the one
+      under the pointer turns solid. The rule is always there, transparent, so
+      nothing on the line moves when it appears. */
+.classic .cl-sec .cl-text,
+.classic .cl-sec .cl-date input,
+.classic .cl-sec .cl-addr input {
+  border-bottom: 1px dotted transparent;
+}
+.classic .cl-col:hover .cl-text:not(:disabled),
+.classic .cl-col:hover .cl-date input,
+.classic .cl-col:hover .cl-addr input {
+  border-bottom-color: #9a9a9a;
+}
+.classic .cl-sec .cl-text:not(:disabled):hover,
+.classic .cl-sec .cl-date input:hover,
+.classic .cl-sec .cl-addr input:hover {
+  border-bottom-style: solid;
+  border-bottom-color: var(--cl-ink);
+}
+/* A select is padded past its text, so its rule goes on the text itself. */
+.classic .cl-col:hover .cl-select[data-slot='select-trigger'] [data-slot='select-value'] {
+  text-decoration: underline dotted #9a9a9a;
+  text-underline-offset: 4px;
+}
+.classic .cl-sec .cl-select[data-slot='select-trigger']:hover [data-slot='select-value'] {
+  text-decoration: underline solid var(--cl-ink);
+}
+
+/* ── copy: a small button on the line you are pointing at ── */
+/* ZERO WIDTH, the icon drawn past it. A hidden button that took space wrapped
+   onto a line of its own after a long value (make and model), leaving a blank
+   row; with no width it can never wrap or move anything. */
+.cl-copy {
+  opacity: 0;
+  width: 0;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--cl-dim);
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  overflow: visible;
+  cursor: pointer;
+  transition: opacity 120ms;
+}
+.cl-copy svg {
+  flex: none;
+  width: 12px;
+  height: 12px;
+}
+/* A date's calendar button floats 18px past its text (.cl-date button), right
+   where the copy icon would draw — so after a date it is drawn past that. */
+.cl-line:has(.cl-date) .cl-copy svg {
+  transform: translateX(20px);
+}
+.cl-line:hover .cl-copy,
+.cl-history td:hover .cl-copy,
+.cl-copy:focus-visible {
+  opacity: 1;
+}
+/* In a right-aligned figure the icon draws past the cell's edge; a little
+   room keeps it off the next column. */
+.cl-history td.cl-num {
+  padding-right: 18px;
+}
+/* A printed line spaces its children with gap; a table cell doesn't. */
+.cl-history .cl-copy svg {
+  margin-left: 4px;
+}
+.cl-copy:hover {
+  color: var(--cl-ink);
+}
+.cl-copy:focus-visible {
+  outline: 2px solid var(--cl-ink);
+  outline-offset: 1px;
+}
+
+/* ── "Check these" after a DASH reading: stays until Dismiss ── */
+.cl-check {
+  border: 1px solid var(--cl-ink);
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cl-check-h {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 700;
+}
+.cl-check-h .cl-link {
+  font-weight: 400;
+}
+
+/* ── gaps and claims tables: content-sized columns, one line per fact ──
+      .cl-table .cl-num is 160px for the premium table; here the money columns
+      only need their figures, and the width goes to driver and fault. */
+.cl-history .cl-num {
+  width: auto;
+}
+.cl-history td,
+.cl-history th {
+  white-space: nowrap;
+}
+.cl-history td.cl-wrap {
+  white-space: normal;
+}
+
+/* ── what a broker must notice: non-payment, at fault ── a plain bright red,
+      not the dark red of errors, so it reads as "look here" rather than
+      "something broke". */
+.cl-history td.cl-red {
+  color: #e00000;
+}
+.dark .cl-history td.cl-red {
+  color: #ff6b6b;
+}
+
+/* ── a left-out claim, or a gap or claim past its window, stays visible, struck through ── */
+.cl-claims tr[data-left-out] td,
+.cl-history tr[data-past-window] td,
+.dark .cl-history tr[data-past-window] td.cl-red {
+  color: var(--cl-dim);
+  text-decoration: line-through;
+}
+.cl-claims .cl-claim-note td {
+  padding-top: 0;
+  font-size: 11px;
+  color: var(--cl-dim);
 }
 
 /* ── motion: a block that arrives, a value DASH just changed ── */

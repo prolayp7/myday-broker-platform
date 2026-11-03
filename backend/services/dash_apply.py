@@ -1,63 +1,54 @@
-"""Writes a parsed DASH report onto the broker's form.
+"""Writes a read DASH report onto the broker's form.
 
-ONE RULE, AND IT IS THE WHOLE POINT: never overwrite the broker.
+TWO READERS, ONE SHAPE. A report is read by Claude (dash_claude) or, if that
+fails, by the old regex parser (dash_parse). from_claude() and from_fallback()
+turn either into the same report dict, so apply_report() does not care which
+one read it:
 
-DASH fills what is empty and leaves everything else exactly as typed. That is
-what makes this safe to offer as an OPTION beside typing rather than a
-replacement for it — a broker who corrected a licence number on the phone
-keeps their correction, and a report uploaded afterwards cannot silently undo
-it. Without that rule the feature is a liability: the broker's own knowledge
-loses to a document, quietly, with nothing on screen to say so.
+    source            "claude" | "fallback"
+    driver            column -> value offered for the applicant row
+    vehicles          cars to add
+    operators         additional drivers to add
+    gaps, claims      lists, or None when this reader cannot read them
+    notes             things the broker should look at
+    subject_name / subject_license_number / lead_match
 
-Returns what was filled and what was skipped, so the caller can say "6 fields
-filled, 2 already had values" rather than leaving the broker to compare the
-form against the PDF.
+ONE RULE FOR THE APPLICANT'S FIELDS: never overwrite the broker. DASH fills
+what is empty and leaves everything else exactly as typed — except the name,
+which the lead form seeds and nobody typed (see _SEEDED_NAME_FIELDS).
 
-AND WHOSE REPORT IT WAS. Nothing here refuses a report for the wrong person —
-that is the broker's call. But "fill blanks only" is no protection when the
-fields ARE blank, so the subject's name and licence come back for the screen
-to state plainly. See _result().
+GAPS AND CLAIMS ARE DASH FACTS, NOT BROKER INPUT, so a new reading replaces
+them — but only a reading that could see them. The fallback parser cannot, and
+returns None for both; None means "leave what is saved", never "there are
+none".
 """
 
 import logging
+from datetime import date
 
 import claude_client
+from repositories import dash_history as history_repo
 from repositories import driver as driver_repo
 from repositories import vehicle as vehicle_repo
 from services import dash_parse
+from services import dash_rules as rules
 from services import vehicle as vehicle_service
 
 logger = logging.getLogger("myday.dash")
 
-# Everything the parser can produce for a driver. Spelled out rather than
-# taking whatever the parser returns: a field added to dash_parse should be a
-# deliberate decision here too, not something that starts writing to the
-# database on its own.
-# THE ONLY FIELDS DASH IS ALLOWED TO REPLACE. Everything else in
-# _DRIVER_FIELDS keeps the never-overwrite rule below.
-#
-# These four are seeded automatically at applicant creation from the lead
-# form's name — nobody typed them, so keeping them would mean preferring a
-# lead-form guess over the licensing record. The report is the better source:
-# a lead form gives "Sajida", DASH gives "CHEEMA,SAJIDA" with the surname.
-#
-# A broker's correction is still safe. They correct AFTER the report is
-# uploaded, and nothing re-parses a report on its own.
+# The only fields DASH is allowed to REPLACE. The lead form seeds them at
+# applicant creation ("Sajida"); the report has the licensing record
+# ("CHEEMA,SAJIDA"), which is the better source.
 _SEEDED_NAME_FIELDS = ("name", "first_name", "middle_name", "last_name")
 
+# Everything a reader can offer for the applicant row. Spelled out so a new
+# field is a deliberate decision here, not something that starts writing to
+# the database on its own.
 _DRIVER_FIELDS = (
     "name",
-    # The split of the name above, and what Meta actually hashes. Listed
-    # here for the reason this tuple exists at all: a field the parser can
-    # produce but this list omits is written nowhere and fails silently.
     "first_name",
     "middle_name",
     "last_name",
-    # ADDED LATE, and its absence is worth remembering. dash_parse gained
-    # full-date-of-birth support with a test proving it PARSES one — which
-    # passed while this list dropped the value, so the feature did nothing and
-    # looked healthy. The test that catches it asserts on the update, not the
-    # parse.
     "date_of_birth",
     "license_number",
     "gender",
@@ -66,182 +57,293 @@ _DRIVER_FIELDS = (
     "city",
     "province",
     "postal_code",
-    # THE THREE POLICY DATES, off the DASH Policies summary. Ordinary fields:
-    # they follow the never-overwrite rule below, so a broker's correction
-    # survives a re-parse. Deliberately NOT in _SEEDED_NAME_FIELDS, which is
-    # the narrow exception for a name nobody typed.
     "renewal_date",
     "insured_since",
     "current_insurer_since",
-    # THE ONE NUMERIC FIELD. int, not text (0114) — the loop below passes values
-    # through untouched, so it reaches Postgres as an int and lands in an int
-    # column. Listed here for the reason this tuple exists at all, stated at the
-    # top: a field the parser can produce but this list omits is written nowhere
-    # and fails silently, exactly as date_of_birth did.
+    # int column (0114); passed through without coercion.
     "at_fault_claims_6y",
 )
 
-# Fields the database constrains to a fixed list (migrations/0035). DASH is
-# free text and we do not control what it prints, so a value outside these is
-# checked for here rather than discovered by Postgres.
-#
-# WHY IT MATTERS DISPROPORTIONATELY: an update is one statement. A single
-# unexpected word — "Separated", say, which is a perfectly reasonable thing for
-# a bureau to print — raises 23514 and fails the WHOLE call, so the address,
-# the licence and the date of birth in the same update are lost with it.
-# Confirmed against the live database, not assumed.
-#
-# Skipping leaves the field for the broker, which is this feature's ordinary
-# outcome and costs nothing. Mapping the value to a near-neighbour would be
-# guessing on a rating factor.
+# Fields the database constrains to a fixed list (0035). A value outside it
+# raises 23514 and fails the WHOLE update, so it is skipped here and left for
+# the broker rather than discovered by Postgres.
 _VOCABULARY = {
     "gender": {"Male", "Female", "Other"},
     "marital_status": {"Single", "Married", "Common Law", "Divorced", "Widowed"},
 }
 
-# NOT license_province, though the parser reads it. There is no field for it on
-# New Policy and there is not going to be one: this brokerage writes Ontario
-# business, so a licence-province control would be a dropdown with one option.
-# Writing it anyway would put a value in the database that the broker cannot
-# see, cannot verify, and cannot correct if DASH had it wrong — which is worse
-# than not collecting it. `province` above is the ADDRESS province, which does
-# have a field.
-#
-# Kept in the parser rather than deleted there: it costs nothing, and it is
-# what the screen would need the day a second province matters.
+# How far back each list counts (agreed: gaps 3, claims 8). Older rows are kept
+# and shown struck through, so the broker can see they were not missed.
+GAP_YEARS = 3
+CLAIM_YEARS = 8
 
 
-def apply_report(driver_id: str, markdown: str) -> dict:
-    """Fill this driver and their vehicles from a DASH report.
+# ── Building the report ────────────────────────────────────────────────────
 
-    The driver row must already exist — it is created when the broker opens
-    the lead, so by the time a report is uploaded there is always one to fill.
+
+def from_claude(raw: dict) -> dict:
+    """Claude's reading, with the exact calculations done in Python."""
+    name = raw.get("name") or {}
+    licence = raw.get("license") or {}
+    address = raw.get("address") or {}
+    dln, province = licence.get("number"), licence.get("province")
+    printed_dob = raw.get("date_of_birth_printed")
+    report_date = _date(raw.get("report_date"))
+
+    gender = raw.get("gender")
+    if not gender:
+        # Backup only: the licence encodes M/F, and only when its year agrees.
+        gender = rules.licence_facts(dln, province, printed_dob)[1]
+
+    driver = {
+        "name": name.get("full_name"),
+        "first_name": name.get("first_name"),
+        "middle_name": name.get("middle_name"),
+        "last_name": name.get("last_name"),
+        "license_number": dln,
+        "date_of_birth": rules.date_of_birth(printed_dob, dln, province),
+        "gender": gender,
+        "marital_status": raw.get("marital_status"),
+        "street_address": address.get("street"),
+        "city": address.get("city"),
+        "province": address.get("province"),
+        "postal_code": address.get("postal_code"),
+        "renewal_date": rules.renewal_date(raw.get("report_date"), raw.get("newest_policy_end")),
+        "insured_since": _date_text(raw.get("insured_since")),
+        "current_insurer_since": _date_text(raw.get("current_insurer_since")),
+        "at_fault_claims_6y": raw.get("at_fault_claims_6y"),
+    }
+
+    notes = []
+    if name.get("unsure"):
+        notes.append(f"Name: {name.get('note') or 'check the name split'}")
+    if address.get("note"):
+        notes.append(f"Address: {address['note']}")
+    for problem in rules.address_problems(
+        driver["street_address"], driver["city"], driver["province"], driver["postal_code"]
+    ):
+        notes.append(f"Address: {problem} — check it against the PDF")
+    if raw.get("policy_dates_unsure"):
+        notes.append(f"Policy dates: {raw.get('policy_dates_note') or 'check the dates'}")
+
+    gaps = (
+        rules.find_gaps(raw.get("applicant_terms") or [])
+        if raw.get("possible_gap_marker")
+        else []
+    )
+    claims, claim_notes = _claims(raw.get("claims") or [], report_date)
+
+    return {
+        "source": "claude",
+        "driver": {k: v for k, v in driver.items() if v not in (None, "")},
+        "vehicles": [_vehicle(v) for v in raw.get("vehicles") or [] if v.get("vin") or v.get("year_make_model")],
+        "operators": [
+            {k: v for k, v in op.items() if v}
+            for op in raw.get("additional_drivers") or []
+            if op.get("name")
+        ],
+        "gaps": gaps,
+        "claims": claims,
+        "notes": notes + claim_notes,
+        "subject_name": name.get("full_name"),
+        "subject_license_number": dln,
+        "lead_match": raw.get("lead_match"),
+    }
+
+
+def from_fallback(markdown: str) -> dict:
+    """The regex parser's reading — today's behaviour, used when Claude fails.
+
+    It cannot read gaps or claims, so both are None: what is already saved
+    stays saved.
     """
+    driver = {**dash_parse.parse_driver(markdown), **dash_parse.parse_policy_dates(markdown)}
+    if driver.get("name"):
+        # A split is an interpretation of the name, not a reading of it.
+        # Blank parts stay blank for the broker rather than becoming a guess.
+        first, middle, last = claude_client.split_name(driver["name"])
+        driver.update(first_name=first or None, middle_name=middle or None, last_name=last or None)
+
+    operators = dash_parse.parse_operators(markdown)
+    for operator in operators:
+        first, middle, last = claude_client.split_name(operator.get("name"))
+        operator.update({k: v for k, v in
+                         (("first_name", first), ("middle_name", middle), ("last_name", last)) if v})
+
+    return {
+        "source": "fallback",
+        "driver": driver,
+        "vehicles": dash_parse.parse_vehicles(markdown),
+        "operators": operators,
+        "gaps": None,
+        "claims": None,
+        "notes": [
+            "Read by the backup method — check the name, address and dates "
+            "against the PDF. Insurance gaps and claims were not read; what was "
+            "saved before is unchanged."
+        ],
+        "subject_name": driver.get("name"),
+        "subject_license_number": driver.get("license_number"),
+        "lead_match": None,
+    }
+
+
+def _date(value) -> date | None:
+    try:
+        return date.fromisoformat((value or "").strip())
+    except ValueError:
+        return None
+
+
+def _date_text(value) -> str | None:
+    day = _date(value)
+    return day.isoformat() if day else None
+
+
+def _vehicle(raw: dict) -> dict:
+    vehicle = {
+        "vin": (raw.get("vin") or "").replace(" ", "").upper() or None,
+        "year_make_model": raw.get("year_make_model"),
+        "one_day_distance_km": raw.get("one_way_km"),
+        "annual_km": raw.get("annual_km"),
+    }
+    return {k: v for k, v in vehicle.items() if v is not None}
+
+
+def _claims(raw_claims: list[dict], report_date: date | None) -> tuple[list[dict], list[str]]:
+    """Every claim, with its amounts worked out exactly."""
+    claims, notes = [], []
+    for raw in raw_claims:
+        loss_date = _date(raw.get("date_of_loss"))
+        if not loss_date:
+            continue
+        lines = raw.get("kol_lines") or []
+        totals, unknown = rules.claim_amounts(lines)
+        percent = raw.get("at_fault_percent")
+        claim = {
+            "date_of_loss": loss_date.isoformat(),
+            "at_fault_percent": percent,
+            "whose": raw.get("whose") or "unknown",
+            "claim_driver_license": raw.get("driver_license"),
+            "claim_driver_name": raw.get("driver_name"),
+            "insurer": raw.get("insurer"),
+            "claim_number": raw.get("claim_number"),
+            # Whole dollars as strings: exact, and JSON-safe for the RPC.
+            **{box: str(amount) for box, amount in totals.items()},
+        }
+        claims.append(claim)
+
+        # A claim past the window is struck through: nothing there to check.
+        if report_date and not rules.within_years(loss_date, report_date, CLAIM_YEARS):
+            continue
+
+        label = f"Claim {loss_date.isoformat()}"
+        if unknown:
+            notes.append(f"{label}: loss code(s) {', '.join(unknown)} not recognised")
+        if not rules.claim_totals_match(lines, raw.get("total_loss"), raw.get("total_expense")):
+            notes.append(f"{label}: amounts don't add up to DASH's totals — check the PDF")
+    _same_date_driver(claims)
+    return claims, notes
+
+
+_DRIVER_KEYS = ("whose", "claim_driver_license", "claim_driver_name")
+
+
+def _same_date_driver(claims: list[dict]) -> None:
+    """A claim with no driver takes the driver of a claim on the SAME date of
+    loss — the broker's rule: one accident is often recorded as two claims and
+    only one names who was driving.
+
+    Only when that date names exactly one driver; nothing else changes.
+    """
+    named: dict[str, set[tuple]] = {}
+    for claim in claims:
+        if claim["whose"] != "unknown":
+            named.setdefault(claim["date_of_loss"], set()).add(
+                tuple(claim[k] for k in _DRIVER_KEYS)
+            )
+    for claim in claims:
+        drivers = named.get(claim["date_of_loss"], set())
+        if claim["whose"] == "unknown" and len(drivers) == 1:
+            claim.update(zip(_DRIVER_KEYS, next(iter(drivers))))
+
+
+# ── Writing it ─────────────────────────────────────────────────────────────
+
+
+def apply_report(driver_id: str, report: dict) -> dict:
+    """Fill this driver, their vehicles and drivers, and replace gaps/claims."""
     driver_rows = driver_repo.get_by_id(driver_id).data or []
     if not driver_rows:
         return empty_result()
     driver = driver_rows[0]
 
-    parsed = dash_parse.parse_driver(markdown)
-    # THE POLICY DATES RIDE ALONG. They come from the Policies summary rather
-    # than the header, so they are merged here rather than threaded through
-    # parse_driver — which reads the header alone and is documented as doing
-    # so. From _apply_driver's point of view they are ordinary fields, and get
-    # the never-overwrite rule for free.
-    parsed = {**parsed, **dash_parse.parse_policy_dates(markdown)}
-    filled, skipped = _apply_driver(driver, parsed)
+    filled, skipped = _apply_driver(driver, report["driver"])
 
-    # NO CARS ON A POLICY THAT INSURES NONE, and this is the door the guard in
-    # services/vehicle.py did not cover: add_vehicle refuses one, and this
-    # function wrote straight to the repository — so a broker could pick
-    # Homeowner Only, upload a report, and put cars in the database that the
-    # screen deliberately hides.
-    #
-    # SKIPPED, NOT REFUSED, unlike add_vehicle. Every other failure in this
-    # file leaves the broker a field to type rather than losing the upload:
-    # the applicant's own details are already written above and are what they
-    # are waiting on. vehicles_added: 0 already tells them nothing was added.
+    # No cars on a policy that insures none (Homeowner Only) — skipped rather
+    # than refused, so the applicant's fields above are not lost with them.
     added = (
-        _apply_vehicles(driver_id, dash_parse.parse_vehicles(markdown))
+        _apply_vehicles(driver_id, report["vehicles"])
         if vehicle_service.lead_insures_vehicles(str(driver["lead_id"]))
         else 0
     )
-    drivers = _apply_operators(driver["lead_id"], dash_parse.parse_operators(markdown))
+    drivers = _apply_operators(driver["lead_id"], report["operators"])
 
-    # No conversion call here. at_fault_claims_6y, written above, used to make a
-    # lead "Preferred" and queue extra Meta events; since 0133 there is one
-    # dataset and driver facts change no signal at all.
+    # "Check these" — replaced by every reading, cleared by Dismiss. Its own
+    # update, outside the fill-blanks rule: these are about THIS reading.
+    try:
+        driver_repo.update(driver_id, {"dash_notes": report.get("notes") or None})
+    except Exception:
+        logger.exception("Could not save the DASH notes for driver %s", driver_id)
 
-    return _result(filled, skipped, added, parsed, drivers)
+    if report.get("gaps") is not None and report.get("claims") is not None:
+        # One database statement: both lists are replaced together or not at
+        # all, so a failure part-way can never leave them empty.
+        history_repo.replace(driver_id, report["gaps"], report["claims"])
+
+    return _result(filled, skipped, added, drivers, report)
 
 
 def empty_result() -> dict:
-    """Nothing was read, said in the SAME SHAPE as a successful read.
-
-    A scanned PDF and a missing driver both land here. Returning a short dict
-    instead — three keys where the caller's type declares six — is a contract
-    the screen only survives because JavaScript tolerates undefined.
-    """
-    return _result([], [], 0, {}, 0)
+    """Nothing was read, in the SAME SHAPE as a successful read."""
+    return _result([], [], 0, 0, {"source": None, "notes": []})
 
 
-def _result(
-    filled: list[str],
-    skipped: list[str],
-    added: int,
-    parsed: dict,
-    drivers: int,
-) -> dict:
-    """What the caller gets back, including WHOSE report this was.
+def _result(filled, skipped, added, drivers, report) -> dict:
+    """What the screen gets back, including WHOSE report this was.
 
-    THE SUBJECT COMES FROM THE PARSED REPORT, NOT FROM WHAT WAS WRITTEN, and
-    that distinction is the whole point. Nothing here rejects a report for the
-    wrong person — the broker decides that, and a system that argued with them
-    would make an optional convenience into a step in the way. What it must
-    not do is stay silent: a report for the spouse, or for the customer still
-    open in another tab, fills exactly the blank fields it should not, and
-    "fill blanks only" is no protection at all when the fields are blank.
-
-    So the name and licence are handed back for the screen to show. Reporting
-    only what was FILLED would go quiet in the one case that matters most —
-    a broker who already typed a name gets that field skipped, and a mismatch
-    is likeliest precisely when they have been typing.
+    The subject comes from the report, not from what was written — a broker
+    who already typed a name gets that field skipped, and a wrong report is
+    likeliest exactly then.
     """
     return {
         "driver_filled": filled,
         "driver_skipped": skipped,
         "vehicles_added": added,
         "drivers_added": drivers,
-        # As printed on the report, in DASH's own LAST,FIRST form. Not
-        # reformatted: the broker is comparing this against the document in
-        # front of them, and prettifying it makes that harder.
-        "subject_name": parsed.get("name"),
-        "subject_license_number": parsed.get("license_number"),
+        "subject_name": report.get("subject_name"),
+        "subject_license_number": report.get("subject_license_number"),
+        "source": report.get("source"),
+        "notes": report.get("notes") or [],
+        "gaps_found": None if report.get("gaps") is None else len(report["gaps"]),
+        "claims_found": None if report.get("claims") is None else len(report["claims"]),
     }
 
 
-def _apply_driver(driver: dict, parsed: dict) -> tuple[list[str], list[str]]:
-    """Blank fields only.
-
-    "Blank" means null or empty string — a driver row is created with the
-    lead's name and phone and nothing else, so most fields arrive as null,
-    while a field the broker cleared can come back as "".
-    """
-    # str | int, since 0114: at_fault_claims_6y is an int column and the loop
-    # below passes parsed values through without coercion. Stringifying it here
-    # would store "2" in an int column and rely on Postgres to cast back.
+def _apply_driver(driver: dict, offered: dict) -> tuple[list[str], list[str]]:
+    """Blank fields only (null or ""), apart from the seeded name fields."""
     values: dict[str, str | int] = {}
     skipped: list[str] = []
 
-    # THE SPLIT RIDES ALONG WITH THE NAME. Derived here rather than in
-    # dash_parse because it is an interpretation of what the report says, not
-    # a reading of it — the parser stays byte-faithful (see dash_azure on why
-    # that matters). Blank parts are dropped by the `new is None` check below,
-    # so an ambiguous name Claude could not resolve leaves the columns empty
-    # for the broker rather than filling them with a guess.
-
-    if parsed.get("name"):
-        first, middle, last = claude_client.split_name(parsed["name"])
-        parsed = {
-            **parsed,
-            "first_name": first or None,
-            "middle_name": middle or None,
-            "last_name": last or None,
-        }
-
     for field in _DRIVER_FIELDS:
-        new = parsed.get(field)
+        new = offered.get(field)
         if new is None:
             continue
         if field in _VOCABULARY and new not in _VOCABULARY[field]:
-            # A value the database would refuse. Skipped rather than sent —
-            # see _VOCABULARY for what that would otherwise cost.
             logger.info("DASH %s=%r is not a value this form offers", field, new)
             continue
         existing = driver.get(field)
         if existing not in (None, "") and field not in _SEEDED_NAME_FIELDS:
-            # The broker got here first. Recorded so the caller can say so,
-            # rather than the difference being invisible.
             skipped.append(field)
             continue
         values[field] = new
@@ -255,48 +357,18 @@ def _apply_driver(driver: dict, parsed: dict) -> tuple[list[str], list[str]]:
 def _apply_operators(lead_id: str, parsed: list[dict]) -> int:
     """Add the other people on the policy as additional drivers.
 
-    Whatever the report lists, added. The point is to save the broker asking
-    the customer for details a document in front of them already carries — so
-    a name with no licence is still a name they do not have to type.
+    A licence already on the lead is skipped, so uploading the same report
+    twice does not add the spouse twice. A licence-less operator inserts every
+    time — still a name the broker does not have to type, and easy to delete.
 
-    A LICENCE ALREADY ON THE LEAD IS SKIPPED — retry safety, and nothing more
-    than that. An earlier commit removed this check on the reasoning that "the
-    report is not stored, so deduplication is unnecessary". That reasoning was
-    wrong: the report is not stored, but THESE ROWS ARE. A broker who uploads
-    the same PDF twice would get the spouse twice, and having to delete a
-    duplicate because a retry succeeded is not a thing to ask of them.
-
-    Exact match on the licence, which is the same trade the VIN check makes
-    one function below — not normalised, not fuzzy, no index. A licence-less
-    operator inserts every time, accepted for the same reason a VIN-less car
-    does: it is still a name the broker does not have to type, and it is
-    visible enough to delete.
-
-    The other exclusion lives in dash_parse.parse_operators: the report's
-    subject is listed as an operator on his own policy, so without it the
-    applicant appears on screen twice.
-
-    RELATIONSHIP IS 'NA' (migrations/0081). DASH knows the person is on the
-    policy and cannot know what they are to OUR applicant — its own
-    "Relationship to Policyholder" is about whoever owns the policy, who need
-    not be the same person. So the row says "not stated" and the broker picks
-    it on New Policy, where they are looking at that driver anyway.
-
-    Counts what was actually inserted. A failure part-way through leaves the
-    drivers already added on screen, and reporting zero would make the toast
-    and the panel disagree.
+    Relationship is 'NA' (0081): DASH cannot know what they are to OUR
+    applicant, so the broker picks it on New Policy.
     """
     try:
         existing = driver_repo.list_for_lead(lead_id).data or []
-        # Case-folded, matching what the vehicle loop does with VINs: a licence
-        # typed in lower case is the same person.
-        known = {
-            d["license_number"].upper() for d in existing if d.get("license_number")
-        }
+        known = {d["license_number"].upper() for d in existing if d.get("license_number")}
     except Exception:
-        # Could not read who is already here. Import anyway rather than
-        # refusing: a duplicate the broker can see beats a spouse who never
-        # arrived because a read failed.
+        # A duplicate the broker can see beats a spouse who never arrived.
         logger.exception("Could not read existing drivers on lead %s", lead_id)
         known = set()
 
@@ -306,25 +378,23 @@ def _apply_operators(lead_id: str, parsed: list[dict]) -> int:
         if licence and licence in known:
             continue
         try:
-            # Name and licence only — the same reason license_province is
-            # absent from _DRIVER_FIELDS above: there is no field for it, so
-            # writing it would store something the broker cannot see.
+            # Name (printed and split — the screen shows the split) and
+            # licence only. No field for the licence province, so writing it
+            # would store something nobody can see.
             driver_repo.insert_additional(
                 lead_id,
                 "NA",
-                {k: operator[k] for k in ("name", "license_number") if k in operator},
+                {
+                    k: operator[k]
+                    for k in ("name", "first_name", "middle_name", "last_name", "license_number")
+                    if operator.get(k)
+                },
             )
-            # Recorded so the SAME licence twice in ONE report inserts once.
-            # The vehicle loop below has always done this; the driver loop did
-            # not, so a report listing someone on two policies added them
-            # twice even though the check was there.
             if licence:
                 known.add(licence)
             added += 1
         except Exception:
-            # Never raises, for the reason the vehicles do not: the applicant's
-            # own fields are already written and are what the broker is waiting
-            # on. A driver that would not insert is one the broker adds by hand.
+            # Never raises: the applicant's own fields are already written.
             logger.exception("A DASH driver could not be added to lead %s", lead_id)
     return added
 
@@ -332,25 +402,12 @@ def _apply_operators(lead_id: str, parsed: list[dict]) -> int:
 def _apply_vehicles(driver_id: str, parsed: list[dict]) -> int:
     """Add cars that are not already on the driver.
 
-    THE RULES COME FROM THE DELETED services/vehicle.py, carried over rather
-    than reinvented — it had already worked them out against real data:
+      1. Nothing is ever deleted — a report is not evidence a car is gone.
+      2. Matched by VIN; a known VIN is left exactly as typed.
+      3. A VIN-less car inserts every time: matching on make and model could
+         merge two different cars, which is worse than a visible duplicate.
 
-      1. NOTHING IS EVER DELETED. A car missing from the report stays put; the
-         broker may have added it deliberately, and a report is not evidence
-         that a car does not exist.
-      2. MATCHED BY VIN. Its own comment: "Verified against the live database,
-         not assumed." (It also matched on dash_vehicle_id; that column is
-         gone with the dash_* tables, and the same comment argued the VIN was
-         the reliable key anyway.)
-      3. A KNOWN VIN IS LEFT EXACTLY AS TYPED. Not updated, not merged.
-      4. A VIN-LESS CAR INSERTS EVERY TIME. Accepted deliberately: matching on
-         make and model could silently merge two genuinely different cars,
-         which is worse than a duplicate the broker can see and delete.
-
-    Never raises. The driver's own fields are already written and are what the
-    broker is waiting on — failing the whole upload because a vehicle row
-    could not be inserted would trade the important thing for the convenient
-    one. A failure here means the broker adds the car by hand.
+    Never raises — a failure here means the broker adds the car by hand.
     """
     if not parsed:
         return 0
@@ -359,9 +416,6 @@ def _apply_vehicles(driver_id: str, parsed: list[dict]) -> int:
         existing = vehicle_repo.list_for_driver(driver_id).data or []
         known = {(v.get("vin") or "").upper() for v in existing if v.get("vin")}
     except Exception:
-        # Could not read what is already here. Import anyway rather than
-        # refusing: a duplicate the broker can see beats a car that never
-        # arrived because a read failed.
         logger.exception("Could not read existing vehicles for driver %s", driver_id)
         known = set()
 
@@ -376,9 +430,6 @@ def _apply_vehicles(driver_id: str, parsed: list[dict]) -> int:
                 known.add(vin)
             added += 1
         except Exception:
-            # PER CAR, not around the loop. Wrapping the whole thing meant one
-            # bad insert reported zero while an earlier car sat on screen — the
-            # toast and the panel disagreeing. Same fix the driver loop above
-            # already carries.
+            # Per car, so one bad insert doesn't hide the cars that did land.
             logger.exception("A DASH vehicle could not be added to driver %s", driver_id)
     return added

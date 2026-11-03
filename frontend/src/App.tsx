@@ -21,6 +21,7 @@ import AdminLeadList from '@/routes/admin/leads/AdminLeadList'
 import CapiDashboard from '@/routes/admin/capi/CapiDashboard'
 import CapiLeads from '@/routes/admin/capi/CapiLeads'
 import WebsiteLeads from '@/routes/admin/websiteLeads/WebsiteLeads'
+import ReviewSenders from '@/routes/admin/reviewSenders/ReviewSenders'
 import MobileLeads from '@/routes/mobile/MobileLeads'
 import MobileMyDay from '@/routes/mobile/MobileMyDay'
 import { PhoneRedirect } from '@/routes/mobile/PhoneRedirect'
@@ -70,6 +71,7 @@ export default function App() {
             <Route path="/admin/capi" element={<RequireAuth><CapiLeads /></RequireAuth>} />
             <Route path="/admin/capi/details" element={<RequireAuth><CapiDashboard /></RequireAuth>} />
             <Route path="/admin/website-leads" element={<RequireAuth><WebsiteLeads /></RequireAuth>} />
+            <Route path="/admin/review-senders" element={<RequireAuth><ReviewSenders /></RequireAuth>} />
             <Route path="/admin/broker-groups" element={<RequireAuth><BrokerGroupList /></RequireAuth>} />
             <Route path="/admin/broker-groups/:groupId" element={<RequireAuth><BrokerGroupDetail /></RequireAuth>} />
             <Route

@@ -1,4 +1,4 @@
-# MyDay Broker — Sales Management (React)
+# MyDay CRM — Sales Management (React)
 
 Broker lead-management app. React + Vite + shadcn/ui port of the original SAPUI5
 wireframes.

@@ -1,15 +1,28 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Download, Loader2, Paperclip } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
   uploadDashReport,
   parseDashReportUrl,
   dashReportUrl,
+  dashLeadMismatch,
   firstValidationMessage,
+  type DashLeadMismatch,
   type DashPrefillResult,
 } from '@/data/api'
+
+/** One read of a report; `confirm` is true on the broker's "Use it anyway". */
+type ReadReport = (confirm: boolean) => Promise<DashPrefillResult>
 
 // Fill the applicant from the DASH report the broker already pulled.
 //
@@ -129,10 +142,31 @@ export function DashPrefill({
   }
   const fileInput = useRef<HTMLInputElement>(null)
 
-  async function run(work: () => Promise<DashPrefillResult>) {
+  // Seconds since reading started. The server answers once, at the end, so
+  // the steps below move on typical timings, and the counter proves it is
+  // still going.
+  const [seconds, setSeconds] = useState(0)
+  useEffect(() => {
+    if (!busy) return
+    setSeconds(0)
+    const started = Date.now()
+    const tick = setInterval(() => setSeconds(Math.floor((Date.now() - started) / 1000)), 1000)
+    return () => clearInterval(tick)
+  }, [busy])
+  const step = seconds < 5 ? 0 : seconds < 28 ? 1 : 2
+
+  /** A report that looks like someone else's, waiting on the broker. Nothing
+   *  has been saved for it; "Use it anyway" sends it again with confirm. */
+  const [mismatch, setMismatch] = useState<{ detail: DashLeadMismatch; read: ReadReport } | null>(
+    null,
+  )
+
+  async function run(read: ReadReport, confirm = false) {
     setBusy(true)
     try {
-      const result = await work()
+      const result = await read(confirm)
+      // The notes (and the backup-method warning) are not toasts: they come
+      // back on the driver as "Check these", which stays until dismissed.
       toast.success(describe(result))
 
       // Said out loud rather than left for the broker to notice. A report
@@ -157,6 +191,12 @@ export function DashPrefill({
       }
       return
     } catch (err) {
+      const wrongLead = dashLeadMismatch(err)
+      if (wrongLead) {
+        // Not a failure: the report was read but nothing was saved. Ask.
+        setMismatch({ detail: wrongLead, read })
+        return
+      }
       // Cleared on failure: a line naming the PREVIOUS report, left standing
       // beside a failed one, is worse than no line at all.
       setSubject(null)
@@ -230,7 +270,8 @@ export function DashPrefill({
             // reach for — their hands are already on the keyboard. The button
             // beside it is for everyone who does not know that.
             if (e.key === 'Enter' && url.trim() && !busy) {
-              run(() => parseDashReportUrl(driverId, url.trim()))
+              const link = url.trim()
+              run((confirm) => parseDashReportUrl(driverId, link, confirm))
             }
           }}
         />
@@ -253,11 +294,13 @@ export function DashPrefill({
             finishes, so a staged "Uploading… → Reading…" would be a timer
             pretending to know something. This says only what is true. */}
         {busy && (
-          <div className="pointer-events-none absolute inset-0 flex items-center gap-2 px-2.5">
-            <span className="bg-primary/70 h-0.5 w-6 shrink-0 animate-pulse rounded-full" />
-            <span className="text-muted-foreground truncate text-xs">
-              Reading the DASH report…
-            </span>
+          <div className="pointer-events-none absolute inset-0 flex items-center gap-3 truncate px-1 text-xs">
+            {['Text from PDF', 'Reading the report', 'Filling the form'].map((label, i) => (
+              <span key={label} className={i === step ? 'font-bold' : 'text-muted-foreground'}>
+                {i < step ? '✓' : i === step ? '●' : '○'} {label}
+              </span>
+            ))}
+            <span className="text-muted-foreground tabular-nums">{seconds}s</span>
           </div>
         )}
       </div>
@@ -271,7 +314,10 @@ export function DashPrefill({
         size="sm"
         variant="secondary"
         disabled={busy || !url.trim()}
-        onClick={() => run(() => parseDashReportUrl(driverId, url.trim()))}
+        onClick={() => {
+          const link = url.trim()
+          run((confirm) => parseDashReportUrl(driverId, link, confirm))
+        }}
         className="h-(--height-control) shrink-0 text-xs"
       >
         Parse
@@ -288,7 +334,7 @@ export function DashPrefill({
           // event the second time — otherwise a retry after a failure silently
           // does nothing.
           e.target.value = ''
-          if (file) run(() => uploadDashReport(driverId, file))
+          if (file) run((confirm) => uploadDashReport(driverId, file, confirm))
         }}
       />
       <button
@@ -335,6 +381,44 @@ export function DashPrefill({
         )}
         DASH
       </Button>
+
+      {/* WRONG-LEAD CHECK. Shown when the report's licence or name doesn't fit
+          this lead. Nothing has been saved yet — not even the PDF copy. */}
+      <Dialog open={mismatch !== null} onOpenChange={(open) => !open && setMismatch(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Is this the right customer?</DialogTitle>
+            <DialogDescription>
+              This DASH report is for{' '}
+              <strong>{mismatch?.detail.subject_name ?? 'someone else'}</strong>
+              {mismatch?.detail.subject_license_number &&
+                ` (${mismatch.detail.subject_license_number})`}
+              , but this lead is <strong>{mismatch?.detail.lead_name ?? 'unnamed'}</strong>.
+            </DialogDescription>
+          </DialogHeader>
+          <p className="text-muted-foreground text-xs">{mismatch?.detail.reason}</p>
+          <DialogFooter>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setMismatch(null)
+                toast('Nothing was saved')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                const pending = mismatch
+                setMismatch(null)
+                if (pending) run(pending.read, true)
+              }}
+            >
+              Use it anyway
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

@@ -12,3 +12,9 @@ class DashUrlRequest(BaseModel):
     """
 
     url: HttpUrl
+    # The broker's "Use it anyway" after a wrong-lead warning.
+    confirm: bool = False
+
+
+class DashClaimLeftOut(BaseModel):
+    left_out: bool

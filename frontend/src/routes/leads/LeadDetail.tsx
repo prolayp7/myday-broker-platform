@@ -344,7 +344,7 @@ export function LeadDetail({
     if (!applicantId) return
     try {
       const created = await addDriverVehicle(applicantId)
-      setVehicles((list) => [...list, fromRow(created)])
+      setVehicles((list) => [fromRow(created), ...list])
     } catch (err) {
       toast.error(firstValidationMessage(err) ?? 'Could not add the vehicle')
     }

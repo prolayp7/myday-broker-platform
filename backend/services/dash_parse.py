@@ -1,13 +1,17 @@
 """Turns Azure's markdown of a DASH report into the fields we prefill.
 
+THE FALLBACK READER. Claude reads reports now (services/dash_claude.py); this
+runs only when that fails, so a broker is never worse off than before. It
+cannot read gaps or claims.
+
 PLAIN PYTHON, NO MODEL. An earlier design assumed DASH needed one, because
 choosing between several operator blocks looked like judgement. Reading a real
 8-page report showed it is not: every block prints the licence number, and
 every claim names its own driver. What was left is string matching, which is
 testable in a way a prompt is not.
 
-WHAT IS PARSED, and nothing else — the report is used to fill the broker's
-form and is then discarded, so anything the form has no home for is skipped:
+WHAT IS PARSED, and nothing else — anything the form has no home for is
+skipped:
 
   driver     name, licence number + province, gender, marital status, address
   operators  the other people on the most recent policy: name and licence

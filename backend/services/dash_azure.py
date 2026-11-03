@@ -1,9 +1,10 @@
-"""Reads a DASH PDF with Azure Document Intelligence and returns markdown.
+"""Reads a PDF with Azure Document Intelligence and returns markdown.
 
-The only network call in the PARSING path — routes/dash.py makes one of its
-own when a broker supplies a link rather than a file. Everything
-downstream (dash_parse, dash_apply) works on the markdown string, so it is
-testable from a fixture with no credentials and no Azure bill.
+For DASH this is now the exception: dash_text reads a normal report locally.
+Azure handles a scan, which has no text to take out, and the regex fallback,
+which is built on this markdown. mvr_pull uses it for every MVR. dash_parse
+works on the markdown string, so it is testable from a fixture with no
+credentials and no Azure bill.
 
 WHY AZURE AND NOT GEMINI. The deleted services/dash_gemini.py recorded a
 limitation it could not fix after two rounds of increasingly explicit
@@ -15,11 +16,6 @@ it."
 Azure transcribes. Run against a real 8-page report on 2026-08-09 it returned
 "FRANCIS,MILLAT F" and "5 FESTIVAL DR, , NORTH YORK ON M2R3T9" — the missing
 space and the empty comma-separated part both byte-exact, first try.
-
-AND NO MODEL IS NEEDED ON TOP, which an earlier design assumed. The two
-decisions thought to need judgement — which operator block is the subject,
-which claims are theirs — turned out to be string matches on the licence
-number, which the same report showed is printed on every block.
 """
 
 import os
@@ -75,9 +71,9 @@ def read_pdf(pdf_bytes: bytes) -> str:
     report hanging its own request.
 
     Raises TimeoutError past the deadline, which services/dash.py turns into
-    "that report could not be read" and the broker types the fields instead.
-    That is the right outcome: this feature is optional, and waiting is worse
-    than doing it by hand.
+    "taking too long — try again, or type the details". That is the right
+    outcome: this feature is optional, and waiting is worse than doing it by
+    hand.
     """
     poller = _client().begin_analyze_document(
         "prebuilt-layout",

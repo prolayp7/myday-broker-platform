@@ -141,7 +141,7 @@ def test_at_fault_claims_reach_the_driver_row(stub, monkeypatch):
     """
     _report(monkeypatch, {"at_fault_claims_6y": 2})
 
-    dash_apply.apply_report("d1", "# report")
+    dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))
 
     assert stub["written"]["at_fault_claims_6y"] == 2
     assert isinstance(stub["written"]["at_fault_claims_6y"], int)
@@ -157,7 +157,7 @@ def test_zero_at_fault_claims_is_written_not_skipped(stub, monkeypatch):
     """
     _report(monkeypatch, {"at_fault_claims_6y": 0})
 
-    dash_apply.apply_report("d1", "# report")
+    dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))
 
     assert stub["written"]["at_fault_claims_6y"] == 0
 
@@ -172,7 +172,7 @@ def test_an_unreadable_at_fault_count_writes_nothing(stub, monkeypatch):
     """
     _report(monkeypatch, {"name": "SAMPLE,TESTCASE A"})
 
-    dash_apply.apply_report("d1", "# report")
+    dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))
 
     assert "at_fault_claims_6y" not in stub["written"]
 
@@ -187,7 +187,7 @@ def test_a_broker_value_is_not_overwritten_by_the_report(stub, monkeypatch):
 
     _report(monkeypatch, {"at_fault_claims_6y": 3})
 
-    result = dash_apply.apply_report("d1", "# report")
+    result = dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))
 
     assert "at_fault_claims_6y" not in stub["written"]
     assert "at_fault_claims_6y" in result["driver_skipped"]
@@ -197,7 +197,7 @@ def test_the_subject_is_returned(stub, monkeypatch):
     """Whose report was this? The screen cannot say so unless apply says so."""
     _report(monkeypatch, {"name": "SAMPLE,TESTCASE A", "license_number": "S1234-56789-01234"})
 
-    result = dash_apply.apply_report("d1", "# report")
+    result = dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))
 
     assert result["subject_name"] == "SAMPLE,TESTCASE A"
     assert result["subject_license_number"] == "S1234-56789-01234"
@@ -217,7 +217,7 @@ def test_the_subject_is_returned_even_when_the_name_differs(stub, monkeypatch):
 
     _report(monkeypatch, {"name": "SAMPLE,TESTCASE A", "license_number": "S1234-56789-01234"})
 
-    result = dash_apply.apply_report("d1", "# report")
+    result = dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))
 
     assert result["subject_name"] == "SAMPLE,TESTCASE A", (
         "the report's own subject must still be reported, or a mismatch is invisible"
@@ -233,7 +233,7 @@ def test_the_name_is_not_reformatted(stub, monkeypatch):
     """
     _report(monkeypatch, {"name": "SAMPLE,TESTCASE A"})
 
-    assert dash_apply.apply_report("d1", "# report")["subject_name"] == "SAMPLE,TESTCASE A"
+    assert dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))["subject_name"] == "SAMPLE,TESTCASE A"
 
 
 def test_a_missing_driver_still_answers(monkeypatch):
@@ -244,7 +244,7 @@ def test_a_missing_driver_still_answers(monkeypatch):
     """
     monkeypatch.setattr(dash_apply.driver_repo, "get_by_id", lambda _id: _Result([]))
 
-    result = dash_apply.apply_report("nobody", "# report")
+    result = dash_apply.apply_report("nobody", dash_apply.from_fallback("# report"))
 
     assert result["subject_name"] is None
     assert result["vehicles_added"] == 0
@@ -266,7 +266,7 @@ def test_a_full_date_of_birth_is_actually_written(stub, monkeypatch):
     """
     _report(monkeypatch, {"date_of_birth": "1997-04-12"})
 
-    result = dash_apply.apply_report("d1", "# report")
+    result = dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))
 
     assert stub["written"].get("date_of_birth") == "1997-04-12"
     assert "date_of_birth" in result["driver_filled"]
@@ -278,7 +278,7 @@ def test_a_typed_date_of_birth_is_never_overwritten(stub, monkeypatch):
 
     _report(monkeypatch, {"date_of_birth": "1997-04-12"})
 
-    result = dash_apply.apply_report("d1", "# report")
+    result = dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))
 
     assert "date_of_birth" not in stub["written"]
     assert "date_of_birth" in result["driver_skipped"]
@@ -288,7 +288,7 @@ def test_a_blank_field_is_filled(stub, monkeypatch):
     """The feature doing its job. Without this the rest is just refusal."""
     _report(monkeypatch, {"city": "SAMPLETOWN", "gender": "Male"})
 
-    result = dash_apply.apply_report("d1", "# report")
+    result = dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))
 
     assert stub["written"]["city"] == "SAMPLETOWN"
     assert set(result["driver_filled"]) == {"city", "gender"}
@@ -305,7 +305,7 @@ def test_a_typed_field_is_never_overwritten(stub, monkeypatch):
 
     _report(monkeypatch, {"license_number": "S1234-56789-01234", "city": "SAMPLETOWN"})
 
-    result = dash_apply.apply_report("d1", "# report")
+    result = dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))
 
     assert "license_number" not in stub["written"], "the broker's own value was replaced"
     assert "license_number" in result["driver_skipped"]
@@ -322,7 +322,7 @@ def test_an_empty_string_counts_as_blank(stub, monkeypatch):
 
     _report(monkeypatch, {"city": "SAMPLETOWN"})
 
-    dash_apply.apply_report("d1", "# report")
+    dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))
 
     assert stub["written"]["city"] == "SAMPLETOWN"
 
@@ -344,7 +344,7 @@ def test_a_known_vin_is_not_added_twice(stub, monkeypatch):
         {"vin": "2BBBB2B2BBB000002", "year_make_model": "2021 ACURA - TLX"},
     ])
 
-    result = dash_apply.apply_report("d1", "# report")
+    result = dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))
 
     assert result["vehicles_added"] == 1
     assert [v["vin"] for v in stub["inserted"]] == ["2BBBB2B2BBB000002"]
@@ -356,14 +356,15 @@ def test_vin_matching_ignores_case(stub, monkeypatch):
 
     _report(monkeypatch, {}, [{"vin": "1AAAA1A1AAA000001"}])
 
-    assert dash_apply.apply_report("d1", "# report")["vehicles_added"] == 0
+    assert dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))["vehicles_added"] == 0
 
 
 # ── The other people on the policy ───────────────────────────────────────
 
 
 def test_an_operator_becomes_an_additional_driver(stub, monkeypatch):
-    """Name and licence written in the INSERT, relationship 'NA'.
+    """Name (printed AND split — the screen shows first/middle/last) and
+    licence written in the INSERT, relationship 'NA'.
 
     'NA' because DASH cannot know what this person is to OUR applicant — its
     own "Relationship to Policyholder" is about whoever owns the policy. The
@@ -374,12 +375,15 @@ def test_an_operator_becomes_an_additional_driver(stub, monkeypatch):
         {"name": "OTHERPERSON,SECOND B", "license_number": "O9876-54321-09876"},
     ])
 
-    result = dash_apply.apply_report("d1", "# report")
+    result = dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))
 
     assert result["drivers_added"] == 1
     assert stub["drivers"] == [
         {
             "name": "OTHERPERSON,SECOND B",
+            "first_name": "SECOND",
+            "middle_name": "B",
+            "last_name": "OTHERPERSON",
             "license_number": "O9876-54321-09876",
             "relationship": "NA",
         }
@@ -405,7 +409,7 @@ def test_a_licence_already_on_the_lead_is_not_added_twice(stub, monkeypatch):
         {"name": "OTHERPERSON,SECOND B", "license_number": "O9876-54321-09876"},
     ])
 
-    assert dash_apply.apply_report("d1", "# report")["drivers_added"] == 0
+    assert dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))["drivers_added"] == 0
     assert stub["drivers"] == []
 
 
@@ -417,10 +421,13 @@ def test_an_operator_without_a_licence_is_still_added(stub, monkeypatch):
     _report(monkeypatch, {})
     _operators(monkeypatch, [{"name": "NAMEONLY,PERSON"}])
 
-    result = dash_apply.apply_report("d1", "# report")
+    result = dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))
 
     assert result["drivers_added"] == 1
-    assert stub["drivers"] == [{"name": "NAMEONLY,PERSON", "relationship": "NA"}]
+    assert stub["drivers"] == [{
+        "name": "NAMEONLY,PERSON", "first_name": "PERSON", "last_name": "NAMEONLY",
+        "relationship": "NA",
+    }]
 
 
 def test_a_partial_failure_counts_what_was_actually_added(stub, monkeypatch):
@@ -442,7 +449,7 @@ def test_a_partial_failure_counts_what_was_actually_added(stub, monkeypatch):
     _report(monkeypatch, {})
     _operators(monkeypatch, [{"name": "FIRST,ONE"}, {"name": "SECOND,TWO"}])
 
-    assert dash_apply.apply_report("d1", "# report")["drivers_added"] == 1
+    assert dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))["drivers_added"] == 1
 
 
 def test_an_operator_failure_does_not_lose_the_driver(stub, monkeypatch):
@@ -454,7 +461,7 @@ def test_an_operator_failure_does_not_lose_the_driver(stub, monkeypatch):
     _report(monkeypatch, {"city": "SAMPLETOWN"})
     _operators(monkeypatch, [{"name": "X,Y", "license_number": "O9876-54321-09876"}])
 
-    result = dash_apply.apply_report("d1", "# report")
+    result = dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))
 
     assert stub["written"]["city"] == "SAMPLETOWN"
     assert result["drivers_added"] == 0
@@ -482,7 +489,7 @@ def test_vehicles_count_what_was_actually_added(stub, monkeypatch):
         {"vin": "2BBBB2B2BBB000002"},
     ])
 
-    assert dash_apply.apply_report("d1", "# report")["vehicles_added"] == 1
+    assert dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))["vehicles_added"] == 1
 
 
 def test_the_same_licence_twice_in_one_report_inserts_once(stub, monkeypatch):
@@ -498,7 +505,7 @@ def test_the_same_licence_twice_in_one_report_inserts_once(stub, monkeypatch):
         {"name": "OTHERPERSON,SECOND B", "license_number": "O9876-54321-09876"},
     ])
 
-    assert dash_apply.apply_report("d1", "# report")["drivers_added"] == 1
+    assert dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))["drivers_added"] == 1
 
 
 def test_a_licence_matches_regardless_of_case(stub, monkeypatch):
@@ -508,7 +515,7 @@ def test_a_licence_matches_regardless_of_case(stub, monkeypatch):
     _report(monkeypatch, {})
     _operators(monkeypatch, [{"name": "X,Y", "license_number": "O9876-54321-09876"}])
 
-    assert dash_apply.apply_report("d1", "# report")["drivers_added"] == 0
+    assert dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))["drivers_added"] == 0
 
 
 def test_a_value_the_database_would_refuse_is_skipped(stub, monkeypatch):
@@ -521,7 +528,7 @@ def test_a_value_the_database_would_refuse_is_skipped(stub, monkeypatch):
     """
     _report(monkeypatch, {"marital_status": "Separated", "city": "SAMPLETOWN"})
 
-    result = dash_apply.apply_report("d1", "# report")
+    result = dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))
 
     assert "marital_status" not in stub["written"]
     assert stub["written"]["city"] == "SAMPLETOWN", "the rest must still be written"
@@ -540,7 +547,7 @@ def test_a_vehicle_failure_does_not_lose_the_driver(stub, monkeypatch):
     monkeypatch.setattr(dash_apply.vehicle_repo, "insert", _boom)
     _report(monkeypatch, {"city": "SAMPLETOWN"}, [{"vin": "2BBBB2B2BBB000002"}])
 
-    result = dash_apply.apply_report("d1", "# report")
+    result = dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))
 
     assert stub["written"]["city"] == "SAMPLETOWN"
     assert result["vehicles_added"] == 0
@@ -570,7 +577,7 @@ def test_the_split_name_is_actually_written(stub, monkeypatch):
     _split_returns(monkeypatch, ("SAJIDA", "", "CHEEMA"))
     _report(monkeypatch, {"name": "CHEEMA,SAJIDA"})
 
-    dash_apply.apply_report("d1", "# report")
+    dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))
 
     assert stub["written"]["first_name"] == "SAJIDA"
     assert stub["written"]["last_name"] == "CHEEMA"
@@ -582,7 +589,7 @@ def test_the_printed_name_is_kept_alongside_the_split(stub, monkeypatch):
     _split_returns(monkeypatch, ("SAJIDA", "", "CHEEMA"))
     _report(monkeypatch, {"name": "CHEEMA,SAJIDA"})
 
-    dash_apply.apply_report("d1", "# report")
+    dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))
 
     assert stub["written"]["name"] == "CHEEMA,SAJIDA"
 
@@ -593,7 +600,7 @@ def test_a_middle_name_is_written_and_kept_out_of_first(stub, monkeypatch):
     _split_returns(monkeypatch, ("JOHN", "MICHAEL", "SMITH"))
     _report(monkeypatch, {"name": "SMITH,JOHN MICHAEL"})
 
-    dash_apply.apply_report("d1", "# report")
+    dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))
 
     assert stub["written"]["first_name"] == "JOHN"
     assert stub["written"]["middle_name"] == "MICHAEL"
@@ -616,7 +623,7 @@ def test_the_report_replaces_a_seeded_name(stub, monkeypatch):
     _split_returns(monkeypatch, ("SAJIDA", "", "CHEEMA"))
     _report(monkeypatch, {"name": "CHEEMA,SAJIDA"})
 
-    dash_apply.apply_report("d1", "# report")
+    dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))
 
     assert stub["written"]["name"] == "CHEEMA,SAJIDA"
     assert stub["written"]["first_name"] == "SAJIDA"
@@ -634,7 +641,7 @@ def test_a_typed_field_that_is_not_a_name_is_still_never_overwritten(stub, monke
     _split_returns(monkeypatch, ("SAJIDA", "", "CHEEMA"))
     _report(monkeypatch, {"name": "CHEEMA,SAJIDA", "city": "SAMPLETOWN"})
 
-    dash_apply.apply_report("d1", "# report")
+    dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))
 
     assert "city" not in stub["written"], "a typed city must survive a re-parse"
     assert stub["written"]["first_name"] == "SAJIDA"
@@ -647,7 +654,7 @@ def test_an_unresolved_name_writes_no_parts(stub, monkeypatch):
     _split_returns(monkeypatch, ("", "", ""))
     _report(monkeypatch, {"name": "SHARMA KARAN", "city": "SAMPLETOWN"})
 
-    result = dash_apply.apply_report("d1", "# report")
+    result = dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))
 
     assert not stub["written"].get("first_name")
     assert not stub["written"].get("last_name")
@@ -663,7 +670,7 @@ def test_no_name_in_the_report_asks_nothing(stub, monkeypatch):
     monkeypatch.setattr(dash_apply.claude_client, "split_name", _boom)
     _report(monkeypatch, {"city": "SAMPLETOWN"})
 
-    dash_apply.apply_report("d1", "# report")
+    dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))
 
     assert stub["written"]["city"] == "SAMPLETOWN"
 
@@ -688,7 +695,7 @@ def test_the_policy_dates_are_actually_written(stub, monkeypatch):
         },
     )
 
-    dash_apply.apply_report("d1", "# report")
+    dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))
 
     assert stub["written"]["renewal_date"] == "2026-02-16"
     assert stub["written"]["insured_since"] == "2016-02-16"
@@ -703,7 +710,7 @@ def test_a_typed_policy_date_is_never_overwritten(stub, monkeypatch):
     _report(monkeypatch, {"city": "SAMPLETOWN"})
     _policies(monkeypatch, {"renewal_date": "2026-02-16"})
 
-    dash_apply.apply_report("d1", "# report")
+    dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))
 
     assert "renewal_date" not in stub["written"]
 
@@ -714,7 +721,7 @@ def test_a_report_with_no_policies_still_applies_the_driver(stub, monkeypatch):
     _report(monkeypatch, {"city": "SAMPLETOWN", "gender": "Male"})
     _policies(monkeypatch, {})
 
-    dash_apply.apply_report("d1", "# report")
+    dash_apply.apply_report("d1", dash_apply.from_fallback("# report"))
 
     assert stub["written"]["city"] == "SAMPLETOWN"
     assert "renewal_date" not in stub["written"]

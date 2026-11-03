@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routes import ad, ad_group, ad_platform, address, auth, broker, broker_document, broker_group, campaign, commission, community, contact_log, country, dash, driver, lead, lead_cost, lead_form, lead_phone, meta_signal, mvr_pull, premium_history, property, reminder, vehicle, webhooks, website_lead, whatsapp_webhooks
+from routes import ad, ad_group, ad_platform, address, auth, broker, broker_document, broker_group, campaign, commission, community, contact_log, country, dash, driver, lead, lead_cost, lead_form, lead_phone, meta_signal, mvr_pull, premium_history, property, reminder, review_sender, vehicle, webhooks, website_lead, whatsapp_webhooks
 from services import lead_ingestion as lead_ingestion_service
 from services import meta_signal as meta_signal_service
 from services import reminder as reminder_service
@@ -166,6 +166,7 @@ app.include_router(premium_history.router)
 app.include_router(address.router)
 app.include_router(webhooks.router)
 app.include_router(website_lead.router)
+app.include_router(review_sender.router)
 app.include_router(meta_signal.router)
 app.include_router(whatsapp_webhooks.router)
 

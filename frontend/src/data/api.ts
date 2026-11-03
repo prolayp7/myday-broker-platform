@@ -1621,6 +1621,8 @@ export interface Driver {
    *  decide whether the Download DASH button is live — never to build a URL,
    *  which is minted per click and expires. */
   dash_report_path: string | null
+  /** "Check these" from the last DASH reading; null once dismissed. */
+  dash_notes: string[] | null
 }
 
 /**
@@ -2255,15 +2257,41 @@ export interface DashPrefillResult {
    *  the broker notice. Null if the header could not be read. */
   subject_name: string | null
   subject_license_number: string | null
+  /** Who read the report: Claude, or the backup parser when Claude failed. */
+  source: 'claude' | 'fallback' | null
+  /** Things to check — an unsure name split, amounts that don't add up. */
+  notes: string[]
+  /** Null when the reader could not see them (backup parser): saved lists
+   *  were left as they were. */
+  gaps_found: number | null
+  claims_found: number | null
 }
 
-/** Read an uploaded DASH PDF and prefill this driver. The file is not stored. */
+/** The 409 detail when a report looks like it belongs to someone else. */
+export interface DashLeadMismatch {
+  code: 'dash_lead_mismatch'
+  subject_name: string | null
+  subject_license_number: string | null
+  lead_name: string | null
+  reason: string
+}
+
+export function dashLeadMismatch(err: unknown): DashLeadMismatch | null {
+  if (!axios.isAxiosError(err) || err.response?.status !== 409) return null
+  const detail = err.response.data?.detail
+  return detail?.code === 'dash_lead_mismatch' ? (detail as DashLeadMismatch) : null
+}
+
+/** Read an uploaded DASH PDF and prefill this driver. A copy is kept.
+ *  `confirm` is the broker's "Use it anyway" after a wrong-lead warning. */
 export async function uploadDashReport(
   driverId: string,
   file: File,
+  confirm = false,
 ): Promise<DashPrefillResult> {
   const form = new FormData()
   form.append('file', file)
+  form.append('confirm', String(confirm))
   const { data } = await adminHttp.post<DashPrefillResult>(
     `/drivers/${driverId}/dash-report`,
     form,
@@ -2299,10 +2327,64 @@ export async function dashReportUrl(driverId: string): Promise<string> {
 export async function parseDashReportUrl(
   driverId: string,
   url: string,
+  confirm = false,
 ): Promise<DashPrefillResult> {
   const { data } = await adminHttp.post<DashPrefillResult>(
     `/drivers/${driverId}/dash-report/url`,
-    { url },
+    { url, confirm },
+  )
+  return data
+}
+
+export interface DashGap {
+  gap_from: string
+  gap_to: string
+  days: number
+  reason: 'Non-payment' | 'Possible new vehicle' | 'Other'
+  /** Older than the 3 years that count: shown struck through. */
+  past_window: boolean
+}
+
+export interface DashClaim {
+  id: string
+  /** The broker's "Leave out" — greyed, never deleted. */
+  left_out: boolean
+  /** Older than the 8 years that count: shown struck through. */
+  past_window: boolean
+  date_of_loss: string
+  /** The policy side's share of fault. Null = DASH printed none (unknown). */
+  at_fault_percent: number | null
+  whose: 'applicant' | 'additional' | 'not_on_policy' | 'unknown'
+  claim_driver_license: string | null
+  claim_driver_name: string | null
+  insurer: string | null
+  claim_number: string | null
+  tp_bi: number
+  tp_pd: number
+  ab: number
+  coll: number
+}
+
+/** Clear "Check these" until the next reading. */
+export async function dismissDashNotes(driverId: string): Promise<void> {
+  await adminHttp.post(`/drivers/${driverId}/dash-notes/dismiss`)
+}
+
+/** Leave out (or bring back) a claim by a driver with their own insurance. */
+export async function setDashClaimLeftOut(
+  driverId: string,
+  claimId: string,
+  leftOut: boolean,
+): Promise<void> {
+  await adminHttp.patch(`/drivers/${driverId}/dash-claims/${claimId}`, { left_out: leftOut })
+}
+
+/** Gaps and claims saved from this driver's last full DASH reading. */
+export async function getDashHistory(
+  driverId: string,
+): Promise<{ gaps: DashGap[]; claims: DashClaim[] }> {
+  const { data } = await adminHttp.get<{ gaps: DashGap[]; claims: DashClaim[] }>(
+    `/drivers/${driverId}/dash-history`,
   )
   return data
 }
@@ -2516,5 +2598,31 @@ export async function updateWebsiteBrokers(
     broker_ids: brokerIds,
     ...change,
   })
+  return data
+}
+
+// ── Review senders ──────────────────────────────────────────────────────────
+//
+// The only addresses the submission review reads mail from.
+
+export interface ReviewSender {
+  id: string
+  email: string
+  approved: boolean
+  created_at: string
+}
+
+export async function getReviewSenders(): Promise<ReviewSender[]> {
+  const { data } = await adminHttp.get<ReviewSender[]>('/review-senders')
+  return data
+}
+
+export async function addReviewSender(email: string): Promise<ReviewSender> {
+  const { data } = await adminHttp.post<ReviewSender>('/review-senders', { email })
+  return data
+}
+
+export async function setReviewSender(id: string, approved: boolean): Promise<ReviewSender> {
+  const { data } = await adminHttp.patch<ReviewSender>(`/review-senders/${id}`, { approved })
   return data
 }
